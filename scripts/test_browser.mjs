@@ -53,9 +53,12 @@ function serve(dir) {
 
 // ---------------------------------------------------------------- 網路監測器
 // 用 CDP 直接接每一個 page 與 service_worker 目標的 Network 事件（page.on('request') 看不到 SW 那一側）。
+// base＝網站根網址（結尾帶 /）。合格的請求：GET、同一個 origin、而且路徑在 base 底下
+// （線上是 yolin0513.github.io/certquiz/，同一個 origin 還有使用者其他 App，要連路徑一起限定）。
 class Monitor {
-  constructor(browser, origin) {
-    this.origin = origin;
+  constructor(browser, base) {
+    this.origin = new URL(base).origin;
+    this.prefix = new URL(base).pathname;
     this.records = [];
     this.attached = new Set();
     this.onTarget = t => this.attach(t).catch(() => {});
@@ -74,7 +77,7 @@ class Monitor {
   since(i) { return this.records.slice(i); }
   bad(recs) {
     return recs.filter(r => !r.url.startsWith('data:') && !r.url.startsWith('blob:') &&
-      (r.method !== 'GET' || new URL(r.url).origin !== this.origin));
+      (r.method !== 'GET' || new URL(r.url).origin !== this.origin || !new URL(r.url).pathname.startsWith(this.prefix)));
   }
 }
 
@@ -102,12 +105,12 @@ async function waitText(page, s) {
 }
 
 // ---------------------------------------------------------------- 一、驗尺
-async function ruler(browser, origin, mon) {
+async function ruler(browser, base, mon) {
   console.log('== 一、驗尺（監測器先證明抓得到）');
   const ctx = await browser.createBrowserContext();
   const errors = [];
   const page = await newPage(ctx, errors);
-  await page.goto(origin + '/');
+  await page.goto(base);
   await waitText(page, '證照題庫練習');
   await page.evaluate(() => navigator.serviceWorker.ready.then(() => true));
   let ok = true;
@@ -135,7 +138,7 @@ async function ruler(browser, origin, mon) {
   ok &= check('R4 Service Worker 那一側的請求看得到', has(i, r => r.kind === 'service_worker'),
     `SW 側 0 筆（全部 ${mon.since(i).length} 筆）`);
 
-  const swTarget = browser.targets().find(t => t.type() === 'service_worker' && t.url().startsWith(origin));
+  const swTarget = browser.targets().find(t => t.type() === 'service_worker' && t.url().startsWith(base));
   i = mon.mark();
   if (swTarget) {
     const w = await swTarget.worker();
@@ -198,20 +201,20 @@ async function importPack(page, path, expectActive) {
 }
 
 // ---------------------------------------------------------------- 二、實測
-async function realTest(browser, origin, mon) {
+async function realTest(browser, base, mon) {
   console.log('== 二、實測（乾淨網站複本＋真的匯入包）');
   const pack = JSON.parse(readFileSync(PACK, 'utf-8'));
   const ctx = await browser.createBrowserContext();
   const errors = [];
   const page = await newPage(ctx, errors);
   const i0 = mon.mark();
-  await page.goto(origin + '/');
+  await page.goto(base);
   await waitText(page, '證照題庫練習');
   check('首頁：沒匯入前內控顯示「還沒有題目」', (await text(page)).includes('還沒有題目'));
   await page.evaluate(() => navigator.serviceWorker.ready.then(() => true));
 
   await importPack(page, PACK, pack.counts.active);
-  await page.goto(origin + '/#/');
+  await page.goto(base + '#/');
   await waitText(page, `可練 ${pack.counts.active} 題`);
   check(`匯入後首頁顯示可練 ${pack.counts.active} 題`, true);
 
@@ -226,7 +229,7 @@ async function realTest(browser, origin, mon) {
 
   // 斷網重開：外殼從快取、題目從 IndexedDB
   await page.setOfflineMode(true);
-  await page.goto(origin + '/#/');
+  await page.goto(base + '#/');
   await waitText(page, `可練 ${pack.counts.active} 題`).then(() => check('斷網重開：首頁照樣顯示題數（離線可用）', true),
     e => check('斷網重開：首頁照樣顯示題數（離線可用）', false, e.message));
   await page.setOfflineMode(false);
@@ -250,10 +253,10 @@ async function realTest(browser, origin, mon) {
   const fakePath = join(tmpdir(), `certquiz-xss-${process.pid}.json`);
   writeFileSync(fakePath, JSON.stringify(fake));
   try {
-    await page2.goto(origin + '/');
+    await page2.goto(base);
     await waitText(page2, '證照題庫練習');
     await importPack(page2, fakePath, 1);
-    await page2.goto(origin + '/#/practice?cert=bic&mode=practice&count=1');
+    await page2.goto(base + '#/practice?cert=bic&mode=practice&count=1');
     await page2.waitForSelector('.stem');
     await sleep(300);
     const r = await page2.evaluate(() => ({ xss: window.__xss, img: !!document.querySelector('.stem img, .opt b'), stem: document.querySelector('.stem').textContent }));
@@ -275,7 +278,7 @@ async function mutationTest(browser) {
     writeFileSync(p, src.replace(anchor, anchor + "\n      navigator.sendBeacon('data/leak', item.id);"));
   });
   const { proc, origin } = await serve(site);
-  const mon = new Monitor(browser, origin);
+  const mon = new Monitor(browser, origin + '/');
   const ctx = await browser.createBrowserContext();
   try {
     const page = await newPage(ctx, []);
@@ -295,21 +298,89 @@ async function mutationTest(browser) {
   }
 }
 
+// ---------------------------------------------------------------- 線上模式：關掉再開，紀錄還在
+// 用保留資料的瀏覽器設定檔（userDataDir），第一次開：匯入＋練一輪；整個瀏覽器關掉；第二次用同一個設定檔開：紀錄必須還在。
+async function liveTest(base) {
+  console.log(`== 線上實測：${base}`);
+  const pack = JSON.parse(readFileSync(PACK, 'utf-8'));
+  const profile = mkdtempSync(join(tmpdir(), `certquiz-profile-${process.pid}-`));
+  let st1;
+  const allRecs = [];
+  try {
+    // 第一次開
+    let browser = await puppeteer.launch({ headless: true, userDataDir: profile, args: ['--no-first-run'] });
+    let mon = new Monitor(browser, base);
+    try {
+      if (!(await ruler(browser, base, mon))) return false;
+      const errors = [];
+      const i0 = mon.mark();
+      const page = await newPage(browser.defaultBrowserContext(), errors);
+      await page.goto(base);
+      await waitText(page, '證照題庫練習');
+      await page.evaluate(() => navigator.serviceWorker.ready.then(() => true));
+      await importPack(page, PACK, pack.counts.active);
+      await practiceRound(page, 10);
+      st1 = await idbState(page);
+      check(`線上第一次：匯入 ${st1.user} 題、作答 ${st1.attempts} 筆`, st1.user === pack.counts.total && st1.attempts === 10, JSON.stringify(st1));
+      check('線上第一次：沒有頁面錯誤', errors.length === 0, errors.join('；'));
+      allRecs.push(...mon.since(i0));
+    } finally {
+      await browser.close();
+    }
+    // 第二次開（同一個設定檔）
+    browser = await puppeteer.launch({ headless: true, userDataDir: profile, args: ['--no-first-run'] });
+    mon = new Monitor(browser, base);
+    try {
+      const page = await newPage(browser.defaultBrowserContext(), []);
+      const i0 = mon.mark();
+      await page.goto(base);
+      await waitText(page, `可練 ${pack.counts.active} 題`);
+      const t = await text(page);
+      const st2 = await idbState(page);
+      check(`關掉再開：首頁顯示可練 ${pack.counts.active} 題、已作答 10 次`, t.includes('已作答 10 次'), t.slice(0, 200));
+      check('關掉再開：IndexedDB 的作答、錯題、匯入題都還在且與關閉前相同',
+        st2.attempts === st1.attempts && st2.mistakes === st1.mistakes && st2.user === st1.user, `${JSON.stringify(st1)} → ${JSON.stringify(st2)}`);
+      allRecs.push(...mon.since(i0));
+    } finally {
+      await browser.close();
+    }
+    const bad = new Monitor({ on() {}, targets: () => [] }, base).bad(allRecs);
+    check(`線上：全部 ${allRecs.length} 筆請求都是 ${base} 底下的 GET`, bad.length === 0, bad.slice(0, 5).map(r => `${r.method} ${r.url}`).join('；'));
+    return true;
+  } finally {
+    rmSync(profile, { recursive: true, force: true });
+  }
+}
+
 // ---------------------------------------------------------------- 主程式
 async function main() {
   if (!existsSync(PACK)) { console.log('TEST-BROWSER ABORT：本機沒有匯入包（先跑 python scripts/build_data.py --local）'); return 2; }
   const before = new Set(readdirSync(tmpdir()).filter(n => n.startsWith('puppeteer_dev')));
+  const liveIdx = process.argv.indexOf('--live');
+  let code = 0;
+  if (liveIdx > 0) {
+    const base = process.argv[liveIdx + 1].replace(/\/?$/, '/');
+    try {
+      if (!(await liveTest(base))) { console.log('TEST-BROWSER ABORT：驗尺失敗，不下結論'); return 2; }
+      code = fails ? 1 : 0;
+    } finally {
+      const left = readdirSync(tmpdir()).filter(n => (n.startsWith('puppeteer_dev') && !before.has(n)) || n.startsWith(`certquiz-profile-${process.pid}`));
+      if (left.length) { console.log(`✗ 暫存目錄沒清掉：${left.join('、')}`); code = 1; }
+    }
+    console.log(code ? `TEST-BROWSER FAILED：${fails} 項不符` : 'TEST-BROWSER OK（線上）：驗尺 5 項＋關掉再開全部符合');
+    return code;
+  }
   const site = makeSite();
   const { proc, origin } = await serve(site);
+  const base = origin + '/';
   const browser = await puppeteer.launch({ headless: true, args: ['--no-first-run'] });
-  let code = 0;
   try {
-    const mon = new Monitor(browser, origin);
-    if (!(await ruler(browser, origin, mon))) {
+    const mon = new Monitor(browser, base);
+    if (!(await ruler(browser, base, mon))) {
       console.log('TEST-BROWSER ABORT：驗尺失敗——監測器沒證明抓得到，後面的「沒有外部請求」不能下結論');
       return 2;
     }
-    await realTest(browser, origin, mon);
+    await realTest(browser, base, mon);
     await mutationTest(browser);
     code = fails ? 1 : 0;
   } finally {
