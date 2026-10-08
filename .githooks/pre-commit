@@ -1,4 +1,8 @@
 #!/bin/sh
-# commit 前自查：PDF、題目檔、本機路徑、email 不得進公開 repo（scripts/selfcheck.py）
+# commit 前自查（公開 repo 的防線，見 docs/F_公開repo的影響與防護.md）
+#   1) scripts/selfcheck.py：PDF、題目檔、本機路徑、email、個人資訊不得進 repo
+#   2) scripts/check_privacy.py：App 程式不得有任何能把資料送出去的寫法；index.html 要有 CSP 與 noindex
 # 啟用：git config core.hooksPath .githooks（新 clone 要重下一次，見 docs/STATUS.md）
-exec python -I "$(git rev-parse --show-toplevel)/scripts/selfcheck.py"
+top="$(git rev-parse --show-toplevel)"
+python -I "$top/scripts/selfcheck.py" || exit 1
+python -I "$top/scripts/check_privacy.py" --staged || exit 1
