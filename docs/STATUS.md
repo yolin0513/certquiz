@@ -45,14 +45,21 @@
   - **隱私三層的前兩層**：①CSP（`default-src`、`connect-src` 只准 `'self'`）；②`scripts/check_privacy.py` 靜態檢查（P1 非 GET／sendBeacon／WebSocket／XMLHttpRequest／EventSource／外部網址，P2 CSP，P3 noindex，P4 外部資源），掛進 pre-commit，`--selftest` 12 項；自我測試抓到檢查器自己的兩個 bug（CSP 引號讀錯、`https://` 被當成註解吃掉）已修；真 repo 實測 commit 帶 sendBeacon 的檔被擋。**第③層（瀏覽器實測網路請求）還沒跑——要先問。**
   - **推送閘門** `scripts/pushsafe.sh`：鎖定 commit → 工作區要乾淨 → hooksPath 要設 → 四組自我測試 → 歷史掃描 → 隱私檢查 → 建置檢查 → 只推鎖定的 commit → 比對遠端。`scripts/test_pushsafe.py` 在暫存 clone＋假遠端跑 5 個情境（乾淨可推、工作區不乾淨、繞過 hook 的 PDF 歷史、繞過 hook 的 sendBeacon、HEAD 不在 main），**每個擋下都要附指定理由才算數**；全部符合，45 秒。
   - **noindex**：`index.html` 已加 `<meta name="robots" content="noindex, nofollow">`；**部署後要驗「部署出去的頁面真的帶著它」**（留到部署那一步）。
-- **M1 還沒做**：③瀏覽器實測（要先問，見「等回覆」）；建遠端 repo、第一次 push、開 Pages（要先問）；部署後驗 noindex；匯入步驟在手機上實際走一遍後定稿。
+  - **隱私第③層：瀏覽器實測** `node scripts/test_browser.mjs`（2026-10-08，Dispatch 准；puppeteer 借用 JLPT_App 的 node_modules，只讀不改；約 8～35 秒）。全部符合：
+    - **一、驗尺（先跑，任一項失敗就中止、回 2、不下結論）**：R1 頁面 POST、R2 sendBeacon、R3 被 CSP 擋的外部連線（從 securitypolicyviolation 事件抓）、R4 Service Worker 側的請求看得到、R5 Service Worker 送的 POST——5 項都抓到。監測器用 CDP 直接接每個 page 與 service_worker 目標（`page.on('request')` 看不到 SW 那一側）。
+    - **二、實測**（只放要部署的檔的乾淨網站複本＋真的匯入包）：匯入前顯示「還沒有題目」→ 匯入 910 題、可練 801 → 練一輪 10 題出現結果頁 → IndexedDB 作答 10 筆、錯題數＝答錯數、匯入題 910 都在、重複題沒被出 → **斷網重開照樣可用** → 全部 21 筆請求都是同網站 GET（頁面 13、SW 8）、沒有 CSP 違規、沒有頁面錯誤 → 隔離環境裡題目文字夾帶的 HTML 沒被執行、原樣顯示。
+    - **三、端到端突變**：App 改成每答一題 sendBeacon，同一套判定抓到（紅）——證明「實測全綠」能變紅。
+    - 途中自己抓到測試的兩個錯：`page.select` 選不到值不報錯（要 2 題卻停在 10 題）→ 改成核對真的選到；「練完一輪」原本用畫面含「/ 10」判斷，但作答中的進度列「3 / 10」也有 → 改成等結果頁才有的「再練一輪」。
+    - 系統暫存區有 78 個 `puppeteer_dev_chrome_profile-*`，最新是 14:01，全部早於本測試（16:3x），**不是本專案留下的**，沒動；本測試建的 `certquiz-*` 已清乾淨（測試結尾會核對「這次新增的」暫存目錄必須是 0）。
+    - 這支沒放進 pushsafe（要本機匯入包與 JLPT 的 puppeteer、會開瀏覽器）；**部署前手動跑一次、改過 App 程式也要跑**。
+- **M1 還沒做**：建遠端 repo、第一次 push、開 Pages（要先問）；部署後驗 noindex 真的帶在線上頁面；匯入步驟在手機上實際走一遍後定稿；iPhone Safari 的 IndexedDB 交易行為（未實測）。
 - **本機 git**：分支 `main`，作者 GitHub noreply；`core.hooksPath=.githooks`。**沒有遠端、沒有 push。**推送一律 `bash scripts/pushsafe.sh`，不直接下 `git push`。
 - **JLPT_App、RentCheck**：只讀，沒有改任何檔。
 
 ## 等使用者回覆
 
 1. **抽檢單**：請照 `data/local/抽檢/使用者_複核.md` 比對 15 題（每題寫了哪份 PDF、第幾頁、第幾題、轉出來的題目與答案）。
-2. **（Dispatch）准不准跑瀏覽器實測**：預估與內容見回報；用 JLPT_App 已裝好的 puppeteer（只執行、不改它）＋本機靜態伺服器。
+2. （已完成）瀏覽器實測：2026-10-08 Dispatch 准、已跑、全部符合（見交接快照）。
 3. **（使用者，部署前）**：遠端 repo 名稱、建 repo、第一次 push、開 Pages——四件都要先問。
 
 ## 題庫母體與口徑（2026-10-08）
