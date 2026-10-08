@@ -786,7 +786,8 @@ const AUDIT = () => {
   const tokens = ['--fg', '--muted', '--pri', '--pri-fg', '--ok', '--ng'].map(v => { probe.style.color = root.getPropertyValue(v).trim(); return getComputedStyle(probe).color; });
   probe.remove();
   for (const d of document.querySelectorAll('details')) d.open = true;
-  const out = { n: 0, exempt: 0, fails: [], minRatio: 99, minAt: '', untoken: [], visitedRules: [], pop: {} };
+  const out = { n: 0, exempt: 0, fails: [], minRatio: 99, minAt: '', untoken: [], visitedRules: [], pop: {}, population: 0, missed: [] };
+  const measured = new Set();
   const tag = el => el.tagName.toLowerCase() + (el.className && typeof el.className === 'string' ? '.' + el.className.trim().split(/\s+/).join('.') : '');
   for (const el of document.querySelectorAll('#view *')) {
     if (!el.getClientRects().length) continue;
@@ -799,8 +800,9 @@ const AUDIT = () => {
     const own = [...el.childNodes].some(n => n.nodeType === 3 && n.data.trim()) || el.tagName === 'SELECT';
     if (!own) continue;
     let op = 1; for (let e = el; e; e = e.parentElement) op *= Number(getComputedStyle(e).opacity);
-    if (el.closest('[aria-disabled="true"], :disabled')) { out.exempt++; continue; }
+    if (el.closest('[aria-disabled="true"], :disabled')) { out.exempt++; measured.add(el); continue; }
     out.n++;
+    measured.add(el);
     const fg = parse(cs.color), bg = bgOf(el);
     const size = parseFloat(cs.fontSize), bold = Number(cs.fontWeight) >= 700;
     const need = size >= 24 || (bold && size >= 18.66) ? 3 : 4.5;
@@ -808,6 +810,20 @@ const AUDIT = () => {
     if (r < out.minRatio) { out.minRatio = r; out.minAt = `${tag(el)}「${el.textContent.trim().slice(0, 12)}」`; }
     if (r < need) out.fails.push(`${tag(el)}「${el.textContent.trim().slice(0, 14)}」${op < 1 ? '半透明' : r.toFixed(2) + ':1 < ' + need}`);
   }
+  // 母體：跟上面的選法無關，另外從整個 body 走每個文字節點，畫面上看得到的就算一個「文字元素」（加上 select）。
+  // 量到的（算了對比的＋豁免的）必須剛好等於母體；選擇器少抓到一塊區域時，這裡會點名漏掉的元素。
+  const popSet = new Set();
+  const tw = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+  for (let t = tw.nextNode(); t; t = tw.nextNode()) {
+    const p = t.parentElement;
+    if (!t.data.trim() || !p || /^(SCRIPT|STYLE|NOSCRIPT|OPTION)$/.test(p.tagName)) continue;
+    if (!p.getClientRects().length || getComputedStyle(p).visibility !== 'visible') continue;
+    popSet.add(p);
+  }
+  for (const sel of document.querySelectorAll('select')) if (sel.getClientRects().length) popSet.add(sel);
+  out.population = popSet.size;
+  for (const e of popSet) if (!measured.has(e)) out.missed.push(`${tag(e)}「${e.textContent.trim().slice(0, 12)}」`);
+  for (const e of measured) if (!popSet.has(e)) out.missed.push(`（量到但不在母體）${tag(e)}`);
   for (const sh of document.styleSheets) for (const rule of sh.cssRules || []) if ((rule.selectorText || '').includes(':visited')) out.visitedRules.push(rule.selectorText);
   return out;
 };
@@ -864,13 +880,15 @@ async function lookTest(browser, base, shotDir) {
     for (const scheme of ['dark', 'light']) {
       await page.emulateMediaFeatures([{ name: 'prefers-color-scheme', value: scheme }]);
       const fails = [], untoken = [];
-      let n = 0, exempt = 0, min = 99, minAt = '', visited = [];
+      let n = 0, exempt = 0, min = 99, minAt = '', visited = [], population = 0;
+      const missed = [];
       for (const [name, hash, sel, prep] of routes) {
         await gotoView(page, base + '?r=' + Date.now() + hash);   // 每頁重新載入，不帶上一頁的狀態
         await page.waitForSelector(sel);
         if (prep) await prep();
         const a = await page.evaluate(AUDIT);
-        n += a.n; exempt += a.exempt; visited = a.visitedRules;
+        n += a.n; exempt += a.exempt; visited = a.visitedRules; population += a.population;
+        missed.push(...a.missed.map(f => `${name}：${f}`));
         if (a.minRatio < min) { min = a.minRatio; minAt = `${name} ${a.minAt}`; }
         fails.push(...a.fails.map(f => `${name}：${f}`));
         untoken.push(...a.untoken.map(f => `${name}：${f}`));
@@ -881,6 +899,8 @@ async function lookTest(browser, base, shotDir) {
       }
       if (scheme === 'dark') console.log(`   母體（${routes.length} 個畫面，深色那一輪的連結／按鈕／輸入框，依「標籤.類別」計數）：${Object.entries(pop).sort((a, b) => b[1] - a[1]).map(([k, v]) => `${k}×${v}`).join('、')}`);
       const nm = scheme === 'dark' ? '深色' : '淺色';
+      check(`${nm}：母體——畫面上的文字元素 ${population} 個＝量到的 ${n + exempt} 個（算對比 ${n}＋停用豁免 ${exempt}）`,
+        population === n + exempt && missed.length === 0 && population > 500, missed.slice(0, 6).join('；'));
       check(`${nm}：${routes.length} 個畫面 ${n} 個文字元素對比都達 WCAG AA（最低 ${min.toFixed(2)}:1 @ ${minAt}；停用按鈕豁免 ${exempt} 個）`,
         fails.length === 0 && n > 500, fails.slice(0, 6).join('；'));
       check(`${nm}：所有連結、按鈕、輸入框的文字色都是主題色（沒有落回瀏覽器預設）`, untoken.length === 0, untoken.slice(0, 6).join('；'));
