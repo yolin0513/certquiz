@@ -13,6 +13,7 @@ compare_files 去比：
 任何例外都算這一項不符（當掉不等於通過）。
 結束碼：0 全部符合；1 有不符；2 前提不成立。
 """
+import re
 import shutil
 import subprocess
 import sys
@@ -65,6 +66,21 @@ def main():
 
         case("A 原樣：中文檔名與含空白的路徑都抓得到、都一致", lambda f: FILES[f], [])
         case("B 正對照：中文檔內容不同 → 必須點名它", lambda f: (b"x" if f == ZH else FILES[f]), [ZH])
+
+        # C 輸出規約：畫面只有一行（記錄檔路徑），不印結論；結論與每一次 HTTP 存取（狀態碼、大小）都在記錄檔裡
+        r = subprocess.run([sys.executable, "-I", str(ROOT / "scripts" / "verify_live.py"), base], capture_output=True)
+        screen = r.stdout.decode("utf-8", "replace").strip().splitlines()
+        m = re.search(r"寫在 (\S+\.log)", screen[0]) if len(screen) == 1 else None
+        log = Path(m.group(1)) if m else None
+        body = log.read_text(encoding="utf-8") if log and log.exists() else ""
+        last = [l for l in body.splitlines() if l.strip()][-1:] or [""]
+        ok = (len(screen) == 1 and m is not None and not re.search(r"VERIFY-LIVE (OK|FAILED|ABORT)", r.stdout.decode("utf-8", "replace"))
+              and r.returncode == 1 and "VERIFY-LIVE FAILED" in last[0] and re.search(r"· HTTP 200 \d+B \d+ms", body)
+              and re.search(r"· HTTP 404 \d+B \d+ms", body))
+        print(f"{'✓' if ok else '✗'} C 輸出規約：畫面 {len(screen)} 行、不含結論；結論只在記錄檔最後一行（{last[0][13:60]}）；記錄檔有每次 HTTP 的狀態碼與大小；結束碼 {r.returncode}")
+        fails += 0 if ok else 1
+        if log and log.exists():
+            log.unlink()
     finally:
         if proc:
             proc.kill()

@@ -11,12 +11,19 @@
 驗尺：V3 與 V4 都先用已知樣本證明抓得到（V3：本機 HEAD 確實有的檔要回 200；V4：拿一題真的題幹餵進同一個比對函式必須命中）。
 用法：python scripts/verify_live.py https://yolin0513.github.io/certquiz/
 結束碼：0 全部符合；1 有不符；2 驗尺失敗或前提不成立。
+
+**輸出只寫進檔案，畫面上不印結論**（2026-10-08）：完整輸出寫在 data/local/logs/verify-live-<時間>.log，畫面只印那個路徑。
+理由：「直接截命令輸出的最後一行」比「先存檔再讀」順手，這個專案因此兩次查不到失敗的是哪一項；
+讓結論只存在檔案裡，讀的人就非得打開檔案不可，這條教訓不必再靠記得。
+每一次 HTTP 存取都記下時間、狀態碼、回應大小、耗時（連線錯誤也記）——偶發失敗時留下證據，不再只能「重跑、重現不出來」。
 """
 import json
 import re
 import subprocess
 import sys
 import time
+import traceback
+from datetime import datetime, timezone
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -32,13 +39,19 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
 import selfcheck as S  # noqa: E402
 
+LOGDIR = ROOT / "data" / "local" / "logs"
 fails = 0
 failed = []   # 不符的檢查名稱：總結行直接列出（2026-10-08 一次「1 項不符」因為只截了最後一行而查不到是哪一項）
 
 
+def out(msg):
+    """每一行加時間戳記；main() 執行時 stdout 已經轉到記錄檔。"""
+    print(f"{datetime.now().strftime('%H:%M:%S.%f')[:-3]} {msg}", flush=True)
+
+
 def check(desc, ok, detail=""):
     global fails
-    print(f"{'✓' if ok else '✗'} {desc}{'' if ok else '：' + str(detail)}")
+    out(f"{'✓' if ok else '✗'} {desc}{'' if ok else '：' + str(detail)}")
     if not ok:
         fails += 1
         failed.append(desc)
@@ -51,11 +64,17 @@ def fetch(url):
     url = urllib.parse.quote(url, safe=":/?&=%#")
     sep = "&" if "?" in url else "?"
     req = urllib.request.Request(f"{url}{sep}v={int(time.time())}", headers={"User-Agent": "certquiz-verify", "Cache-Control": "no-cache"})
+    t0 = time.time()
+    st, body, err = None, b"", ""
     try:
         with urllib.request.urlopen(req, timeout=30) as r:
-            return r.status, r.read()
+            st, body = r.status, r.read()
     except urllib.error.HTTPError as e:
-        return e.code, b""
+        st = e.code
+    except Exception as e:   # 連線錯誤、逾時：記下來、當成失敗回傳，不讓整支程式炸掉而什麼都沒留下
+        err = f"{type(e).__name__}: {e}"
+    out(f"· HTTP {st if st is not None else '—'} {len(body)}B {int((time.time() - t0) * 1000)}ms {urllib.parse.unquote(url)}{('｜' + err) if err else ''}")
+    return st, body
 
 
 def compare_files(base, files, local_bytes):
@@ -81,14 +100,32 @@ def main():
     if len(sys.argv) < 2:
         print(__doc__)
         return 2
+    LOGDIR.mkdir(parents=True, exist_ok=True)
+    path = LOGDIR / f"verify-live-{datetime.now(timezone.utc).strftime('%Y%m%d-%H%M%S')}.log"
+    screen = sys.stdout
+    screen.write(f"VERIFY-LIVE：完整輸出與結論都寫在 {path}（畫面不印結論；結束碼 0＝全部符合、1＝有不符、2＝中止）\n")
+    screen.flush()
+    with path.open("w", encoding="utf-8") as f:
+        sys.stdout = sys.stderr = f
+        try:
+            out(f"開始（UTC {datetime.now(timezone.utc).isoformat(timespec='seconds')}）")
+            return run()
+        except Exception:
+            out("VERIFY-LIVE ABORT：程式例外\n" + traceback.format_exc())
+            return 2
+        finally:
+            sys.stdout, sys.stderr = screen, sys.__stderr__
+
+
+def run():
     base = sys.argv[1].rstrip("/") + "/"
     head = git("rev-parse", "HEAD").decode().strip()
     files = [f for f in git("ls-tree", "-r", "--name-only", "-z", "HEAD").decode("utf-8").split("\0") if f]
     stems, n_packs = S.load_stems(ROOT)
     if not stems:
-        print("VERIFY-LIVE ABORT：本機沒有匯入包，V4 沒有東西可比（不能拿「沒比到」當成「沒有」）")
+        out("VERIFY-LIVE ABORT：本機沒有匯入包，V4 沒有東西可比（不能拿「沒比到」當成「沒有」）")
         return 2
-    print(f"• 線上：{base}｜本機 HEAD {head[:8]}｜追蹤中的檔 {len(files)} 個｜R7 題幹 {len(stems)} 題")
+    out(f"• 線上：{base}｜本機 HEAD {head[:8]}｜追蹤中的檔 {len(files)} 個｜R7 題幹 {len(stems)} 題")
 
     # ---- 驗尺
     known = "index.html"
@@ -98,7 +135,7 @@ def main():
     ruler_v4 = check("驗尺 V4：拿一題真的題幹餵進比對函式必須命中 R7",
                      any(r == "R7" for r, _ in S.check_one("probe.html", ("<p>" + probe + "</p>").encode("utf-8"), (), stems)))
     if not (ruler_v3 and ruler_v4):
-        print("VERIFY-LIVE ABORT：驗尺失敗，後面的結論不成立")
+        out("VERIFY-LIVE ABORT：驗尺失敗，後面的結論不成立")
         return 2
 
     # ---- V1 noindex（讀線上的 HTML）
@@ -137,7 +174,7 @@ def main():
     except (ValueError, KeyError, StopIteration) as e:
         check("V5 線上 manifest 讀得到", False, f"HTTP {st}：{e}")
 
-    print("VERIFY-LIVE OK：全部符合" if not fails else f"VERIFY-LIVE FAILED：{fails} 項不符（{'｜'.join(failed)}）")
+    out("VERIFY-LIVE OK：全部符合" if not fails else f"VERIFY-LIVE FAILED：{fails} 項不符（{'｜'.join(failed)}）")
     return 1 if fails else 0
 
 

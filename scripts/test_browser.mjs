@@ -11,7 +11,7 @@
 // 用法：node scripts/test_browser.mjs     結束碼：0 全部符合；1 有不符；2 驗尺失敗或前提不成立
 import { createRequire } from 'node:module';
 import { spawn } from 'node:child_process';
-import { mkdtempSync, cpSync, rmSync, existsSync, readFileSync, writeFileSync, readdirSync } from 'node:fs';
+import { mkdtempSync, cpSync, rmSync, existsSync, readFileSync, writeFileSync, readdirSync, appendFileSync, mkdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -22,6 +22,19 @@ const puppeteer = createRequire(join(PUP_DIR, 'package.json'))('puppeteer');
 const PACK = join(ROOT, 'data', 'local', 'import', 'bic-匯入包.json');
 const PUBLIC = ['index.html', 'sw.js', 'manifest.webmanifest', 'css', 'js', 'icons', 'data/manifest.json', 'data/q'];
 const AZ = JSON.parse(readFileSync(join(ROOT, 'data', 'q', 'az900.json'), 'utf-8')).questions;
+
+// ---------------------------------------------------------------- 輸出只寫進檔案，畫面上不印結論（2026-10-08）
+// 「直接截命令輸出的最後一行」比「先存檔再讀」順手，這個專案因此兩次查不到失敗的是哪一項；
+// 讓結論只存在檔案裡，讀的人就非得打開檔案不可。每一行加時間戳記；線上模式另記每一次 HTTP 回應（狀態碼、大小）。
+const LOGDIR = join(ROOT, 'data', 'local', 'logs');
+mkdirSync(LOGDIR, { recursive: true });
+const LOG = join(LOGDIR, `test-browser-${new Date().toISOString().replace(/[-:]/g, '').replace('T', '-').slice(0, 15)}.log`);
+const stamp = () => { const d = new Date(); return `${d.toTimeString().slice(0, 8)}.${String(d.getMilliseconds()).padStart(3, '0')}`; };
+console.log = (...a) => appendFileSync(LOG, `${stamp()} ${a.join(' ')}\n`);
+console.error = console.log;
+process.stdout.write(`TEST-BROWSER：完整輸出與結論都寫在 ${LOG}（畫面不印結論；結束碼 0＝全部符合、1＝有不符、2＝中止）\n`);
+process.on('unhandledRejection', e => { console.log(`TEST-BROWSER ERROR（未處理）：${e && e.stack || e}`); process.exit(2); });
+let LIVE = false;   // 線上模式：記下每一次 HTTP 回應，偶發失敗時才有證據
 
 let fails = 0;
 const failed = [];   // 總結行要列出是哪幾項不符（2026-10-08：有一次只截到部分輸出，無從得知是哪一項失敗）
@@ -119,6 +132,14 @@ async function newPage(ctx, errors) {
     window.__csp = [];
     document.addEventListener('securitypolicyviolation', e => window.__csp.push({ uri: e.blockedURI, dir: e.violatedDirective }));
   });
+  if (LIVE) {
+    page.on('response', r => {
+      const h = r.headers(), t = r.timing();
+      console.log(`· HTTP ${r.status()} ${h['content-length'] ?? '?'}B ${r.request().resourceType()}${r.fromServiceWorker() ? '（SW）' : ''}`
+        + `${t ? ` 標頭 ${Math.round(t.receiveHeadersEnd)}ms` : ''} ${r.url()}`);
+    });
+    page.on('requestfailed', q => console.log(`· HTTP 失敗 ${q.failure()?.errorText} ${q.url()}`));
+  }
   page.on('pageerror', e => errors.push(`pageerror: ${e.message}`));
   page.on('console', m => { if (m.type() === 'error') errors.push(`console: ${m.text()}`); });
   return page;
@@ -136,7 +157,16 @@ async function gotoView(page, url) {
 }
 const text = page => page.evaluate(() => document.getElementById('view').innerText);
 async function waitText(page, s) {
-  await page.waitForFunction(t => document.getElementById('view').innerText.includes(t), {}, s);
+  try {
+    await page.waitForFunction(t => document.getElementById('view').innerText.includes(t), {}, s);
+  } catch (e) {
+    // 等不到：把當下的頁面狀態寫進記錄（讀狀態本身也可能卡住，最多等 5 秒）
+    const state = await Promise.race([
+      page.evaluate(() => ({ url: location.href, ready: document.readyState, view: (document.getElementById('view') || {}).innerText?.slice(0, 120) })),
+      sleep(5000).then(() => '（5 秒內讀不到頁面狀態）')]).catch(x => `（讀不到：${x.message}）`);
+    console.log(`  等不到「${s}」：${e.name}；當下頁面：${JSON.stringify(state)}`);
+    throw e;
+  }
 }
 
 // ---------------------------------------------------------------- 一、驗尺
@@ -1075,7 +1105,9 @@ async function main() {
   if (!existsSync(PACK)) { console.log('TEST-BROWSER ABORT：本機沒有匯入包（先跑 python scripts/build_data.py --local）'); return 2; }
   const liveIdx = process.argv.indexOf('--live');
   let code = 0;
+  console.log(`開始（${new Date().toISOString()}）${process.argv.slice(2).join(' ')}`);
   if (liveIdx > 0) {
+    LIVE = true;
     const base = process.argv[liveIdx + 1].replace(/\/?$/, '/');
     try {
       if (!(await liveTest(base))) { console.log('TEST-BROWSER ABORT：驗尺失敗，不下結論'); return 2; }
