@@ -48,7 +48,7 @@ BIC_MORE = "".join(block(i, "bic.law", f"題{i}", ["甲", "乙", "丙", "丁"], 
 POINTS = {"points": [{"level": "1", "ids": ["bic-law-u40-007", "bic-law-t47-001"], "periods": ["40", "47"]},
                      {"level": "2", "ids": ["bic-law-t48-003", "bic-law-t49-002"], "periods": ["48", "49"]},
                      {"level": "2", "ids": ["bic-law-t46-005", "bic-law-t48-006"], "periods": ["46", "48"]}]}
-REVIEW = {"groups": [{"ids": ["bic-law-t48-003", "bic-law-t49-002"], "verdict": "保留"},
+REVIEW = {"groups": [{"ids": ["bic-law-t48-003", "bic-law-t49-002"], "verdict": "保留", "basis": "清單"},
                      {"ids": ["bic-law-t46-005", "bic-law-t48-006"], "verdict": "拆開"}]}
 POINT_FILES = {"bic/a.txt": GOOD_BIC_40, "bic/b.txt": GOOD_BIC_47, "bic/c.txt": BIC_MORE}
 
@@ -103,7 +103,7 @@ def points_check(tmp):
     pack = json.loads((tmp / "lout" / "bic-匯入包.json").read_text(encoding="utf-8"))
     by = {q["id"]: q for q in pack["questions"]}
     pts = pack.get("points")
-    return (pts == [{"id": "P001", "level": "2", "periods": [48, 49], "ids": ["bic-law-t48-003", "bic-law-t49-002"]},
+    return (pts == [{"id": "P001", "level": "2", "periods": [48, 49], "ids": ["bic-law-t48-003", "bic-law-t49-002"], "kind": "list"},
                     {"id": "P002", "level": "1", "periods": [40, 47], "ids": ["bic-law-u40-007", "bic-law-t47-001"]}]
             and pack["counts"]["points"] == 2
             and by["bic-law-t49-002"].get("point") == "P001" and by["bic-law-t47-001"].get("point") == "P002"
@@ -160,7 +160,7 @@ def main():
         ("解析的「選項 N」只點錯誤選項 → 通過", {"az900/a.txt": GOOD_AZ.replace("explain: 解析。", "explain: 解析（選項 2、3 錯）。")}, {}, "public", True),
         ("AZ-900 缺 skill → 擋、點名", {"az900/a.txt": GOOD_AZ.replace("skill: 1\n", "")}, {}, "public", False, ["az900-a-o-0001"]),
         ("一題有錯、其他題都對 → 一個檔都不寫", {"az900/a.txt": GOOD_AZ, "az900/b.txt": GOOD_AZ.replace("az900-a-o-0001", "az900-a-o-0002").replace("answer: 1", "answer: 9")}, {}, "public", False, ["az900-a-o-0002"]),
-        ("考點清單：第一級直接收、第二級只收核對「保留」的；依期數再依最近一期排序編號；題目標上考點代號",
+        ("考點清單：第一級直接收、第二級只收核對「保留」的；依期數再依最近一期排序編號；題目標上考點代號；教材清單類標 kind=list",
          {}, POINT_FILES, "local", True, (), points_check, {"points.json": POINTS, "points-review.json": REVIEW}),
         ("考點清單：有考點檔、沒有人工核對紀錄 → 擋", {}, POINT_FILES, "local", False, ["points-review.json"], None, {"points.json": POINTS}),
         ("考點清單：群組裡的題號對不到題目 → 擋、點名", {}, {"bic/a.txt": GOOD_BIC_40, "bic/b.txt": GOOD_BIC_47}, "local", False, ["bic-law-t48-003"], None,

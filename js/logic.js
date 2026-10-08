@@ -56,6 +56,7 @@ export function validateImportPack(obj, knownCerts) {
         if (codes.has(p.id)) errors.push(`${tag}：代號重複`);
         codes.add(p.id);
         if (!Array.isArray(p.ids) || p.ids.length < 2 || p.ids.some(x => !byId.has(x))) errors.push(`${tag}：題號清單不對（至少兩題、都要在包內）`);
+        if (p.kind !== undefined && p.kind !== 'list') errors.push(`${tag}：類別只能是 list（教材清單）或不寫（同一條規定）`);
         if (!Array.isArray(p.periods) || p.periods.length < 2) errors.push(`${tag}：期別至少要兩期`);
         else (p.ids || []).forEach(x => { const q = byId.get(x); if (q && q.point !== p.id) errors.push(`${tag}：題目 ${x} 標的考點不是 ${p.id}`); });
       });
@@ -253,7 +254,7 @@ export function pointList(points, questions) {
       const key = q.stem + '|' + q.options.join('|');
       if (!seen.has(key)) { seen.add(key); variants.push(q); }
     }
-    out.push({ id: p.id, periods: [...p.periods].sort((a, b) => a - b), rep, variants, ids: p.ids });
+    out.push({ id: p.id, kind: p.kind === 'list' ? 'list' : 'rule', periods: [...p.periods].sort((a, b) => a - b), rep, variants, ids: p.ids });
   }
   return out;
 }

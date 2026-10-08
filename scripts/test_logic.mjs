@@ -98,6 +98,11 @@ check('讀書單元：沒有單元的題目回 null（不記）', L.studyKey({ c
   bad('考點的題號不在包內', p => { p.points[0].ids[1] = 'bic-law-t99-001'; }, '題號清單不對');
   bad('考點只有一期', p => { p.points[0].periods = [47]; }, '期別至少要兩期');
   bad('題目標的考點跟清單不一致', p => { p.questions[1].point = 'P002'; }, '不在考點清單裡');
+  bad('考點類別不是 list', p => { p.points[0].kind = 'topic'; }, '類別只能是 list');
+  check('匯入檢查：類別 list（教材清單）通過', (() => { const p = JSON.parse(JSON.stringify(okPack)); p.points[0].kind = 'list'; return L.validateImportPack(p, ['bic']).ok; })());
+  check('考點清單：教材清單類帶出 kind=list、沒寫類別的是 rule（同一條規定）',
+    L.pointList([{ id: 'P001', kind: 'list', periods: [40, 47], ids: ['a', 'b'] }, { id: 'P002', periods: [40, 47], ids: ['c', 'd'] }],
+      [mk('a', 40), mk('b', 47), mk('c', 40), mk('d', 47)]).map(x => x.kind).join() === 'list,rule');
   check('匯入檢查：舊版匯入包沒有考點 → 照樣通過、考點為空', (() => { const r = L.validateImportPack({ ...base, questions: [mk('bic-law-t48-002', 48)] }, ['bic']); return r.ok && r.points.length === 0; })());
   const pl = L.pointList([{ id: 'P001', periods: [47, 40], ids: ['bic-law-u40-001', 'bic-law-t47-001'] }],
     [mk('bic-law-u40-001', 40, { stem: '舊問法' }), mk('bic-law-t47-001', 47, { stem: '新問法' })]);

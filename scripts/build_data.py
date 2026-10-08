@@ -320,7 +320,10 @@ def attach_points(cid, items, pack):
     if not rf.exists():
         return [f"{pf.name} 存在但沒有人工核對紀錄 {rf.name}——第二級考點群組未經核對，不放進匯入包"]
     points = json.loads(pf.read_text(encoding="utf-8"))["points"]
-    review = {tuple(g["ids"]): g["verdict"] for g in json.loads(rf.read_text(encoding="utf-8"))["groups"]}
+    rgroups = json.loads(rf.read_text(encoding="utf-8"))["groups"]
+    review = {tuple(g["ids"]): g["verdict"] for g in rgroups}
+    # 依據是「教材上的同一份清單」（沒有條號可指）的群組，畫面要跟「同一條規定」分開標示（Dispatch 2026-10-08）
+    is_list = {tuple(g["ids"]) for g in rgroups if g.get("basis") == "清單"}
     by_id = {q["id"]: q for q in items}
     errs, kept = [], []
     for p in points:
@@ -339,7 +342,10 @@ def attach_points(cid, items, pack):
         code = f"P{n:03d}"
         for i in p["ids"]:
             by_id[i]["point"] = code
-        out.append({"id": code, "level": p["level"], "periods": [int(x) for x in p["periods"]], "ids": p["ids"]})
+        item = {"id": code, "level": p["level"], "periods": [int(x) for x in p["periods"]], "ids": p["ids"]}
+        if tuple(p["ids"]) in is_list:
+            item["kind"] = "list"
+        out.append(item)
     pack["points"] = out
     pack["counts"]["points"] = len(out)
     return []
