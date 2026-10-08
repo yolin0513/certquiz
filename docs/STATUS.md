@@ -34,7 +34,8 @@
   - **原文只留本機＋定位資訊**（Dispatch 2026-10-08）：題目欄位加 `basis_anchor`（章節錨點，`#` 是頁首導言）、`basis_section`（章節標題）、`basis_hash`（原文空白正規化後 sha256）、`basis_len`（字數）；草稿用 `verify_basis.py --fill` 從原文算出來。沒有原文時，`verify_basis` 在錨點那一節用「字數＋雜湊」逐格比對。實測：60 題拿掉原文只靠雜湊，60／60 找得到、50 個頁面約 30 秒；用拿掉原文的檔建公開題庫，輸出裡沒有原文也沒有雜湊、60 題都帶錨點。
   - **定期檢查**：`python scripts/verify_basis.py --recheck`，報出「依據失效／錨點過時／授權查不到」的題號。為什麼要跑：官方文件會改版，原文可能被改寫、搬到別節或刪掉，題目在不知情下繼續用就會教錯。不自動跑；建議每次加題前、以及每隔幾個月跑一次。
   - **授權盤點（2026-10-08）**：頁面中繼資料指向的都是私有 `-pr` repo；對應公開版：azure-docs、reliability-docs、azure-management-docs、azure-monitor-docs、azure-compute-docs 的 LICENSE 是 CC BY 4.0；entra-docs 的 LICENSE 檔寫 MIT，但它的法律聲明（ThirdPartyNotices.md）明文授權文件內容 CC BY 4.0——以法律聲明為準。**訓練模組**：先前回報「查不到」是我只查了 learn-pr；實際上內容在公開 repo `MicrosoftDocs/learn`（LICENSE 為 CC BY 4.0），抽一題核對過公開原始檔裡逐字有那句原文。**查不到的**：security（零信任）、Purview、devops（IaC）三個頁面——那三題已改引訓練模組的對應單元。
-  - **還沒做**：剩下 140 題。
+  - **第 3 批 40 題**（`batch3.txt`，不入庫）：草稿累計 100 題，57 個官方細項都至少 1 題；`--recheck` 100／100、60 個頁面授權都查得到。
+  - **還沒做**：剩下 100 題（第 4、5 批）。
 - **M1 已完成（實測）**：
   - **公開 repo 防護**：commit 前自查 `scripts/selfcheck.py` 加上 R6（個人資訊：以人稱開頭的處境敘述＋本機私人清單 `.selfcheck-private.txt`，不入庫）。`--selftest`：18 個樣本＋4 個 .gitignore 情境＋1 個歷史情境全部符合；含誤判對照組（「摘要考題」「銀行主管是否也要考」必須通過）。
   - **文件中性化**：入庫檔案裡的使用者稱呼一律寫「使用者」，個人處境敘述改成 App 範圍的寫法。
