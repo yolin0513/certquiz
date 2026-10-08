@@ -24,9 +24,19 @@ function h(tag, attrs = {}, ...children) {
   return el;
 }
 
+// 條件式的區塊（cond ? 區塊 : null）在 h() 裡會被略過，但瀏覽器原生的 replaceChildren 會把 null 印成字串 "null"
+// （2026-10-08 使用者回報：答題後出現 nullnull）。所以放進畫面一律經過 fill()／render()，不直接呼叫 replaceChildren。
+function clean(nodes) {
+  return nodes.flat().filter(n => n !== null && n !== undefined && n !== false);
+}
+
+function fill(el, ...nodes) {
+  el.replaceChildren(...clean(nodes));
+}
+
 function render(gen, ...nodes) {
   if (gen !== generation) return false;
-  view.replaceChildren(...nodes);
+  view.replaceChildren(...clean(nodes));
   window.scrollTo(0, 0);
   return true;
 }
@@ -144,7 +154,7 @@ async function practiceView(gen, q) {
         if (bk === item.answer) b.classList.add('right');
         else if (bk === k) b.classList.add('wrong');
       }
-      feedback.replaceChildren(h('p', { class: correct ? 'ok' : 'ng', text: correct ? '答對了' : `答錯了，正解是 (${item.answer})` }),
+      fill(feedback, h('p', { class: correct ? 'ok' : 'ng', text: correct ? '答對了' : `答錯了，正解是 (${item.answer})` }),
         h('p', { class: 'src', text: L.sourceLabel(item) }),
         item.explain ? h('p', { class: 'explain', text: item.explain }) : null,
         item.basis ? h('p', { class: 'src basis', text: L.basisText(item) }) : null);
@@ -221,14 +231,14 @@ async function examView(gen, q) {
     };
     const timer = setInterval(tick, 1000);
 
-    const drawGrid = () => grid.replaceChildren(...qs.map((x, n) => h('button', {
+    const drawGrid = () => fill(grid, ...qs.map((x, n) => h('button', {
       type: 'button', class: `cell${answers.has(x.id) ? ' done' : ''}${n === i ? ' cur' : ''}`, text: String(n + 1),
       onclick: () => { i = n; show(); } })));
 
     function show() {
       const item = qs[i];
       counter.textContent = `已答 ${answers.size}／${qs.length}`;
-      body.replaceChildren(
+      fill(body, 
         h('p', { class: 'muted', text: `第 ${i + 1} 題` }), h('p', { class: 'stem', text: item.stem }),
         h('div', { class: 'opts' }, item.options.map((t, k) => h('button', {
           type: 'button', class: `opt${answers.get(item.id) === k + 1 ? ' picked' : ''}`, 'data-k': k + 1,
@@ -242,7 +252,7 @@ async function examView(gen, q) {
     function askSubmit() {
       const left = qs.length - answers.size;
       if (left === 0) { finish(false); return; }
-      confirmBox.replaceChildren(h('p', { text: `還有 ${left} 題未作答，未作答不給分。確定交卷？` }),
+      fill(confirmBox, h('p', { text: `還有 ${left} 題未作答，未作答不給分。確定交卷？` }),
         h('div', { class: 'row' }, h('button', { class: 'btn primary', type: 'button', text: '確定交卷', onclick: () => finish(false) }),
           h('button', { class: 'btn', type: 'button', text: '繼續作答', onclick: () => { confirmBox.hidden = true; } })));
       confirmBox.hidden = false;
@@ -304,7 +314,7 @@ async function statsView(gen, q) {
   const srcName = { 'tabf-official': '官網下載的', 'user-import': '我自己提供的', 'original-ai': '原創題', 'original-human': '原創題' };
   const table = (title, m, name) => h('section', { class: 'card' }, h('h3', { text: title }),
     m.size ? h('table', {}, h('tr', {}, h('th', { text: '' }), h('th', { text: '作答' }), h('th', { text: '答對率' })),
-      [...m].map(([k, g]) => h('tr', {}, h('td', { text: name(k) }), h('td', { text: String(g.answered) }), h('td', { text: pct(g.rate) }))))
+      [...m].map(([k, g]) => h('tr', {}, h('td', { text: (k === undefined || k === null || k === '') ? '未標示' : name(k) }), h('td', { text: String(g.answered) }), h('td', { text: pct(g.rate) }))))
       : h('p', { class: 'muted', text: '還沒有作答紀錄。' }));
   const hist = (await DB.getMeta('examHistory', [])).filter(x => x.cert === certId).slice(0, 10);
   render(gen, h('a', { class: 'back', href: '#/', text: '← 回首頁' }),
@@ -334,13 +344,13 @@ async function settingsView(gen) {
   input.addEventListener('change', async () => {
     const file = input.files[0];
     if (!file) return;
-    status.replaceChildren(h('p', { text: '讀取中…' }));
+    fill(status, h('p', { text: '讀取中…' }));
     let obj;
     try { obj = JSON.parse(await file.text()); }
-    catch { status.replaceChildren(h('p', { class: 'ng', text: '這個檔案不是正確的 JSON。' })); return; }
+    catch { fill(status, h('p', { class: 'ng', text: '這個檔案不是正確的 JSON。' })); return; }
     const r = L.validateImportPack(obj, knownCerts);
     if (!r.ok) {
-      status.replaceChildren(h('p', { class: 'ng', text: `不能匯入：${r.errors.length} 個問題（整包都沒有匯入）` }),
+      fill(status, h('p', { class: 'ng', text: `不能匯入：${r.errors.length} 個問題（整包都沒有匯入）` }),
         h('ul', {}, r.errors.slice(0, 10).map(e => h('li', { text: e }))));
       return;
     }
@@ -349,10 +359,10 @@ async function settingsView(gen) {
     const confirmBtn = h('button', { class: 'btn primary', type: 'button', text: '確定匯入', onclick: async () => {
       confirmBtn.disabled = true;
       const res = await DB.replaceUserQuestions(r.cert, r.questions);
-      status.replaceChildren(h('p', { class: 'ok', text: `匯入完成：${cert.short} ${res.added} 題（可練 ${active} 題）。原本的 ${res.removed} 題已換成這一份；作答紀錄保留。` }),
+      fill(status, h('p', { class: 'ok', text: `匯入完成：${cert.short} ${res.added} 題（可練 ${active} 題）。原本的 ${res.removed} 題已換成這一份；作答紀錄保留。` }),
         h('a', { class: 'btn', href: '#/', text: '回首頁開始練習' }));
     } });
-    status.replaceChildren(h('p', { text: `${cert.short}：${r.questions.length} 題，去掉重複後可練 ${active} 題。` }),
+    fill(status, h('p', { text: `${cert.short}：${r.questions.length} 題，去掉重複後可練 ${active} 題。` }),
       h('p', { class: 'muted', text: '匯入會換掉這張證照先前匯入的題目（同一題的作答紀錄會保留）。' }), confirmBtn);
   });
   render(gen, h('a', { class: 'back', href: '#/', text: '← 回首頁' }),

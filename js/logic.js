@@ -15,13 +15,13 @@ export function validateImportPack(obj, knownCerts) {
   const errors = [];
   if (!obj || typeof obj !== 'object') return { ok: false, errors: ['檔案不是 JSON 物件'], questions: [] };
   if (obj.format !== IMPORT_FORMAT) errors.push(`不是本 App 的匯入包（format 應為 ${IMPORT_FORMAT}）`);
-  if (obj.version !== IMPORT_VERSION) errors.push(`匯入包版本 ${obj.version} 不支援（只支援 ${IMPORT_VERSION}）`);
-  if (!knownCerts.includes(obj.cert)) errors.push(`不認得的證照：${obj.cert}`);
+  if (obj.version !== IMPORT_VERSION) errors.push(obj.version === undefined ? `匯入包沒有標示版本（應為 ${IMPORT_VERSION}）` : `匯入包版本 ${obj.version} 不支援（只支援 ${IMPORT_VERSION}）`);
+  if (!knownCerts.includes(obj.cert)) errors.push(obj.cert === undefined ? '匯入包沒有標示證照' : `不認得的證照：${obj.cert}`);
   const qs = Array.isArray(obj.questions) ? obj.questions : [];
   if (!qs.length) errors.push('匯入包裡沒有題目');
   const ids = new Set();
   qs.forEach((q, i) => {
-    const tag = `第 ${i + 1} 題（${q && q.id}）`;
+    const tag = q && q.id ? `第 ${i + 1} 題（${q.id}）` : `第 ${i + 1} 題`;
     if (!q || typeof q !== 'object') { errors.push(`${tag}：格式不對`); return; }
     if (!ID_RE.test(q.id || '')) errors.push(`${tag}：id 格式不對`);
     if (ids.has(q.id)) errors.push(`${tag}：id 重複`);
@@ -32,7 +32,7 @@ export function validateImportPack(obj, knownCerts) {
     if (!Array.isArray(q.options) || q.options.length !== 4 || q.options.some(o => typeof o !== 'string' || !o))
       errors.push(`${tag}：選項必須剛好四個、不得空白`);
     if (![1, 2, 3, 4].includes(q.answer)) errors.push(`${tag}：答案必須是 1～4`);
-    if (!SOURCES.has(q.source)) errors.push(`${tag}：來源欄位不認得（${q.source}）`);
+    if (!SOURCES.has(q.source)) errors.push(q.source === undefined ? `${tag}：沒有來源欄位` : `${tag}：來源欄位不認得（${q.source}）`);
     if (q.dupOf !== undefined && typeof q.dupOf !== 'string') errors.push(`${tag}：dupOf 格式不對`);
   });
   // dupOf 必須指到包內存在、而且本身不是重複的題
@@ -168,10 +168,12 @@ export function groupRate(attempts, byId, keyOf) {
 
 /** 題目的出處說明（畫面顯示用） */
 export function sourceLabel(q) {
-  const where = q.period ? `第 ${q.period} 期第 ${q.qno} 題` : '';
+  // 每一段都只在欄位存在時才出現；缺欄位就整段不顯示（不顯示「undefined」、空白或「無」）
+  const where = [q.period ? `第 ${q.period} 期` : '', q.qno ? `第 ${q.qno} 題` : ''].join('');
   const law = q.law_as_of ? `（法規基準：${q.law_as_of}）` : '';
-  if (q.source === 'tabf-official') return `官方歷屆試題・${where}${law}`;
-  if (q.source === 'user-import') return `使用者提供的官方歷屆試題・${where}${law}`;
+  const tail = where || law ? `・${where}${law}` : '';
+  if (q.source === 'tabf-official') return `官方歷屆試題${tail}`;
+  if (q.source === 'user-import') return `使用者提供的官方歷屆試題${tail}`;
   if (q.source && q.source.startsWith('original')) {
     const obj = q.objective ? `・官方大綱 ${q.objective}${q.skill ? `（第 ${q.skill} 細項）` : ''}` : '';
     return `原創練習題，不是考題${obj}`;

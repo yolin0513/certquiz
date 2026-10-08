@@ -66,6 +66,21 @@ check('錨點是頁首（#）就只顯示網址', L.basisText({ basis: 'https://
 check('官方題不帶大綱標示', !L.sourceLabel(q('x', { objective: 'B.3' })).includes('大綱'));
 check('官方題標期別、題號、法規基準', /第 47 期第 1 題.*法規基準：2025-03-17/.test(L.sourceLabel(q('x', { law_as_of: '2025-03-17' }))));
 
+// 缺欄位：畫面文字不得出現 null／undefined／NaN，也不得留下孤立的分隔符號（2026-10-08 使用者回報 nullnull 之後補）
+const BAD = /null|undefined|NaN/;
+check('出處：只有來源、沒有期別題號法規基準 → 只顯示來源名稱', L.sourceLabel({ source: 'tabf-official' }) === '官方歷屆試題');
+check('出處：有期別、沒有題號 → 不出現 undefined', L.sourceLabel({ source: 'tabf-official', period: 47 }) === '官方歷屆試題・第 47 期');
+check('出處：只有法規基準', L.sourceLabel({ source: 'user-import', law_as_of: '2025-03-17' }) === '使用者提供的官方歷屆試題・（法規基準：2025-03-17）');
+check('出處：原創題沒有大綱節次 → 只有標示', L.sourceLabel({ source: 'original-ai' }) === '原創練習題，不是考題');
+const brokenMsgs = L.validateImportPack({ format: 'certquiz-import', questions: [{ type: 'single', stem: 'x', options: ['a', 'b', 'c', 'd'], answer: 1 }, null] }, ['bic']).errors;
+check('匯入檢查：缺版本、缺證照、缺 id、缺來源、null 題目時，錯誤訊息裡沒有 null／undefined',
+  brokenMsgs.length >= 4 && !brokenMsgs.some(m => BAD.test(m)), brokenMsgs.join('；'));
+// 靜態檢查：app.js 只有 fill() 與 render() 兩處直接呼叫原生 replaceChildren（其他地方傳 null 會被印成 "null"）
+const appSrc = readFileSync(join(dirname(fileURLToPath(import.meta.url)), '..', 'js', 'app.js'), 'utf-8');
+const rc = appSrc.split('\n').filter(l => /\.replaceChildren\(/.test(l) && !l.trim().startsWith('//'));
+check('app.js 直接呼叫 replaceChildren 的只有 fill() 與 render() 兩處，而且都先經過 clean()',
+  rc.length === 2 && rc.every(l => l.includes('...clean(nodes)')), rc.join(' ｜ '));
+
 // 模擬考：出卷
 const examPool = [...Array(60)].map((_, i) => q(`bic-law-t47-${String(i + 1).padStart(3, '0')}`))
   .concat([q('bic-law-t47-900', { dupOf: 'bic-law-t47-001' }), q('bic-gen-t47-001', { subject: 'gen', chapter: 'bic.gen' })]);

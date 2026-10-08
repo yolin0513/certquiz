@@ -86,9 +86,33 @@ async function cspLog(page) {
   return page.evaluate(() => (window.__csp || []).slice());
 }
 
+// 全畫面掃描：畫面上任何時刻出現 null／undefined／NaN 都是程式錯誤（題庫內容本身沒有這些字，2026-10-08 查過）
+const BAD_TEXT = [];
+const BAD_RE_SRC = 'null|undefined|NaN';
+
 async function newPage(ctx, errors) {
   const page = await ctx.newPage();
   page.setDefaultTimeout(20000);
+  await page.exposeFunction('__reportBadText', (t, where) => { BAD_TEXT.push({ t, where }); });
+  await page.evaluateOnNewDocument(src => {
+    const re = new RegExp(src);
+    const seen = new WeakSet();
+    const scanNode = n => {
+      if (n.nodeType === 3) {
+        const p = n.parentElement;
+        if (p && !['SCRIPT', 'STYLE'].includes(p.tagName) && re.test(n.data) && !seen.has(n)) {
+          seen.add(n);
+          window.__reportBadText(n.data.slice(0, 80), location.hash + ' ' + (p.className || p.tagName));
+        }
+      } else if (n.nodeType === 1) {
+        for (const c of n.childNodes) scanNode(c);
+      }
+    };
+    new MutationObserver(ms => { for (const m of ms) {
+      if (m.type === 'characterData') scanNode(m.target);
+      for (const n of m.addedNodes || []) scanNode(n);
+    } }).observe(document, { childList: true, subtree: true, characterData: true });
+  }, BAD_RE_SRC);
   // CSP 違規事件：被擋的外部連線不會出現在網路紀錄裡，要從這裡抓
   await page.evaluateOnNewDocument(() => {
     window.__csp = [];
@@ -116,6 +140,11 @@ async function ruler(browser, base, mon) {
   await page.evaluate(() => navigator.serviceWorker.ready.then(() => true));
   let ok = true;
   const has = (i, f) => mon.since(i).some(f);
+  const nBad = BAD_TEXT.length;
+  await page.evaluate(() => { const p = document.createElement('p'); p.textContent = 'nullnull'; document.getElementById('view').append(p); });
+  await sleep(200);
+  ok &= check('R0 全畫面掃描：畫面上出現 nullnull 被抓到', BAD_TEXT.length > nBad && BAD_TEXT.slice(nBad).some(x => x.t.includes('nullnull')));
+  BAD_TEXT.length = nBad;   // 驗尺自己造的，不算
 
   let i = mon.mark();
   await page.evaluate(() => fetch('data/manifest.json', { method: 'POST' }).catch(() => 0));
@@ -404,6 +433,25 @@ async function examTest(browser, base) {
     check(`法規模擬考：時間到自動交卷；10 題對 × 2 ＝ ${hB.score} 分、未作答 ${hB.unanswered} 題、用時 ${hB.usedSec} 秒`,
       hB.timeUp === true && hB.count === 50 && hB.correct === 10 && hB.unanswered === 40 && hB.score === 20 && hB.passed === false &&
       hB.usedSec === 3600 && bodyB.includes('時間到自動交卷') && bodyB.includes('20 分（不及格）'), `${JSON.stringify(hB)}｜${bodyB.slice(0, 200)}`);
+    // C. 法規 50 題全部答對：成績頁沒有「答錯與未作答」那一塊，畫面上也不能多出任何字
+    const nC = BAD_TEXT.length;
+    await page.goto(base + '#/');   // 上一場也是同一個網址，同網址 goto 不會換頁
+    await waitText(page, '證照題庫練習');
+    await page.goto(base + '#/exam?cert=bic&subject=law');
+    await (await page.waitForSelector('button::-p-text(開始考試)')).click();
+    await page.waitForSelector('.clock');
+    for (let n = 0; n < 50; n++) {
+      const cur = await page.evaluate(() => ({ stem: document.querySelector('.stem').textContent,
+        opts: [...document.querySelectorAll('.opt span:last-child')].map(e => e.textContent) }));
+      await page.click(`.opt[data-k="${ans.get(key(cur.stem, cur.opts))}"]`);
+      if (n < 49) await page.click('button::-p-text(下一題)');
+    }
+    await page.click('.sticky button::-p-text(交卷)');
+    await page.waitForSelector('a.btn.primary::-p-text(再考一次)');
+    await sleep(200);
+    const bodyC = await text(page);
+    check('法規模擬考全部答對：100 分及格、沒有「答錯與未作答」區塊、畫面沒有多出 null', bodyC.includes('100 分（及格）') &&
+      !bodyC.includes('答錯與未作答') && BAD_TEXT.length === nC, `${bodyC.slice(0, 200)}｜${BAD_TEXT.slice(nC).map(x => x.t).join('；')}`);
     check('模擬考：沒有頁面錯誤', errors.length === 0, errors.join('；'));
     return true;
   } finally {
@@ -469,6 +517,65 @@ function addProbe(dir) {
   writeFileSync(join(dir, 'sw-probe.html'),
     '<!doctype html><meta charset="utf-8"><title>sw probe</title><script>navigator.serviceWorker.register("sw.js")' +
     '.then(() => navigator.serviceWorker.ready).then(() => { window.__swReady = true; });</script>');
+}
+
+// ---------------------------------------------------------------- 二之五、缺欄位的題目走完整流程
+// 匯入檢查接受的最小題目：只有 id、cert、type、題幹、四個選項、答案、來源（沒有科目、期別、題號、法規基準、解析、依據）
+async function minimalTest(browser, base) {
+  console.log('== 二之五、最小題目（只有題幹、選項、答案）走完整流程，畫面不得出現 null／undefined／NaN');
+  const ctx = await browser.createBrowserContext();
+  const errors = [];
+  const tmpFiles = [];
+  try {
+    const page = await newPage(ctx, errors);
+    const n0 = BAD_TEXT.length;
+    await page.goto(base);
+    await waitText(page, '證照題庫練習');
+    const mk = n => ({ id: `bic-law-t98-00${n}`, cert: 'bic', type: 'single', stem: `最小題目第 ${n} 題`, options: ['甲', '乙', '丙', '丁'], answer: 2, source: 'tabf-official' });
+    const minimal = { format: 'certquiz-import', version: 1, cert: 'bic', questions: [1, 2, 3].map(mk) };
+    const pMin = join(tmpdir(), `certquiz-min-${process.pid}.json`); tmpFiles.push(pMin);
+    writeFileSync(pMin, JSON.stringify(minimal));
+    await importPack(page, pMin, 3);
+    await page.goto(base + '#/');
+    await waitText(page, '可練 3 題');
+    // 練習：第 1 題答對、第 2 題答錯、第 3 題答對 → 結果頁
+    await page.goto(base + '#/practice?cert=bic&mode=practice&count=3&order=unseen');
+    for (const k of [2, 1, 2]) {
+      await page.waitForSelector('.opt:not([disabled])');
+      await page.click(`.opt[data-k="${k}"]`);
+      await page.waitForSelector('.feedback:not([hidden])');
+      await sleep(100);
+      await page.click('.q .btn.primary');
+    }
+    await page.waitForSelector('a.btn.primary::-p-text(再練一輪)');
+    await page.goto(base + '#/practice?cert=bic&mode=mistakes&count=20');
+    await page.waitForSelector('.opt:not([disabled])');
+    await page.click('.opt[data-k="2"]');
+    await page.waitForSelector('.feedback:not([hidden])');
+    await page.goto(base + '#/stats?cert=bic');
+    await waitText(page, '最近的模擬考');
+    const statsText = await text(page);
+    const emptyNames = await page.$$eval('table tr td:first-child', tds => tds.filter(td => !td.textContent.trim()).length);
+    check('最小題目：統計頁每一列都有分組名稱（沒有空白格）', emptyNames === 0 && statsText.includes('依科目'), `${emptyNames} 格空白｜${statsText.slice(0, 200)}`);
+    await page.goto(base + '#/');
+    await waitText(page, '證照題庫練習');
+    // 格式錯誤的匯入包：缺版本、缺證照、缺 id、缺來源——錯誤訊息會顯示在畫面上
+    const broken = { format: 'certquiz-import', questions: [{ type: 'single', stem: 'x', options: ['a', 'b', 'c', 'd'], answer: 1 }, null] };
+    const pBad = join(tmpdir(), `certquiz-broken-${process.pid}.json`); tmpFiles.push(pBad);
+    writeFileSync(pBad, JSON.stringify(broken));
+    await page.goto(base + '#/settings');
+    const input = await page.waitForSelector('input[type=file]');
+    await input.uploadFile(pBad);
+    await waitText(page, '不能匯入');
+    await sleep(200);
+    const mine = BAD_TEXT.slice(n0);
+    check('最小題目＋格式錯誤的匯入包：整個流程畫面上都沒有出現 null／undefined／NaN', mine.length === 0,
+      mine.slice(0, 5).map(x => `「${x.t}」@${x.where}`).join('；'));
+    check('最小題目：沒有頁面錯誤', errors.length === 0, errors.join('；'));
+  } finally {
+    for (const f of tmpFiles) rmSync(f, { force: true });
+    await ctx.close();
+  }
 }
 
 // ---------------------------------------------------------------- 二之三、題庫檔讀不到
@@ -578,9 +685,19 @@ async function liveTest(base) {
 }
 
 // ---------------------------------------------------------------- 主程式
+// 這次執行建立的暫存目錄：只看本專案自己命名的前綴（certquiz-…-<pid>-）。
+// 不看 puppeteer_dev_*：同一台機器上其他專案也會同時跑 puppeteer（2026-10-08 實測：MealMate 的測試），
+// 用「執行期間多出來的 puppeteer_dev 目錄」判斷會把別人的算成自己的，清理時更會刪到別人的。
+// 瀏覽器關閉後 Windows 上刪目錄可能慢幾秒：等最多 10 秒，還在的自己刪（都是本次建立、本專案前綴的），刪不掉才回報。
+async function leftovers(prefixes) {
+  const mine = () => readdirSync(tmpdir()).filter(n => prefixes.some(p => n.startsWith(p)));
+  for (let t = 0; t < 20 && mine().length; t++) await sleep(500);
+  for (const n of mine()) { try { rmSync(join(tmpdir(), n), { recursive: true, force: true }); } catch { /* 下面會回報 */ } }
+  return mine();
+}
+
 async function main() {
   if (!existsSync(PACK)) { console.log('TEST-BROWSER ABORT：本機沒有匯入包（先跑 python scripts/build_data.py --local）'); return 2; }
-  const before = new Set(readdirSync(tmpdir()).filter(n => n.startsWith('puppeteer_dev')));
   const liveIdx = process.argv.indexOf('--live');
   let code = 0;
   if (liveIdx > 0) {
@@ -589,7 +706,7 @@ async function main() {
       if (!(await liveTest(base))) { console.log('TEST-BROWSER ABORT：驗尺失敗，不下結論'); return 2; }
       code = fails ? 1 : 0;
     } finally {
-      const left = readdirSync(tmpdir()).filter(n => (n.startsWith('puppeteer_dev') && !before.has(n)) || n.startsWith(`certquiz-profile-${process.pid}`));
+      const left = await leftovers([`certquiz-profile-${process.pid}-`]);
       if (left.length) { console.log(`✗ 暫存目錄沒清掉：${left.join('、')}`); code = 1; }
     }
     console.log(code ? `TEST-BROWSER FAILED：${fails} 項不符` : 'TEST-BROWSER OK（線上）：驗尺 5 項＋關掉再開全部符合');
@@ -598,7 +715,9 @@ async function main() {
   const site = makeSite();
   const { proc, origin } = await serve(site);
   const base = origin + '/';
-  const browser = await puppeteer.launch({ headless: true, args: ['--no-first-run'] });
+  // 用本專案命名的設定檔目錄（不用 puppeteer 預設的 puppeteer_dev_*，見 leftovers 的說明）
+  const chromeDir = mkdtempSync(join(tmpdir(), `certquiz-chrome-${process.pid}-`));
+  const browser = await puppeteer.launch({ headless: true, userDataDir: chromeDir, args: ['--no-first-run'] });
   try {
     const mon = new Monitor(browser, base);
     if (!(await ruler(browser, base, mon))) {
@@ -611,14 +730,17 @@ async function main() {
       return 2;
     }
     await swInstallTest(browser);
+    await minimalTest(browser, base);
     await missingBankTest(browser);
+    check(`全畫面掃描：整個測試期間所有頁面都沒有出現 null／undefined／NaN`, BAD_TEXT.length === 0,
+      BAD_TEXT.slice(0, 8).map(x => `「${x.t}」@${x.where}`).join('；'));
     await mutationTest(browser);
     code = fails ? 1 : 0;
   } finally {
     await browser.close();
     proc.kill();
     rmSync(site, { recursive: true, force: true });
-    const left = readdirSync(tmpdir()).filter(n => (n.startsWith('puppeteer_dev') && !before.has(n)) || n.startsWith(`certquiz-site-${process.pid}`));
+    const left = await leftovers([`certquiz-site-${process.pid}-`, `certquiz-chrome-${process.pid}-`]);
     if (left.length) { console.log(`✗ 暫存目錄沒清掉：${left.join('、')}`); code = 1; }
   }
   console.log(code ? `TEST-BROWSER FAILED：${fails} 項不符` : 'TEST-BROWSER OK：驗尺 5 項＋實測＋端到端突變全部符合');
