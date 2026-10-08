@@ -22,6 +22,7 @@ TABF 官方試卷 PDF → 本機題庫原始檔（不入庫）
     C6 A 與 B 逐題相同（兩條獨立的讀法；不同就點名題號）
     C7 母體：答案題數＝試卷題數＝試卷標示題數
     C8 答案卷標題的期別、組別跟試卷一致
+    C9 有消費金融答案卷時，它的法規欄必須跟一般金融答案卷逐題相同（同一份法規卷）
 證明這些檢查真的會紅：scripts/test_import_tabf.py（突變測試）。
 
 需要本機的 pdftotext（Git for Windows 內附的 xpdf 4.00）。
@@ -38,8 +39,15 @@ for _s in (sys.stdout, sys.stderr):
         pass
 
 ROOT = Path(__file__).resolve().parents[1]
-REFS = [ROOT / "refs" / "tabf" / "past", ROOT / "refs" / "user" / "tabf"]
+# 兩種來源分開管（docs/STATUS.md 常設規則 10）：
+#   official＝本專案從 TABF 官網下載（可逐位元組對官網）；user＝使用者提供（推定官方、無法逐位元組核對）
+# 同一期兩邊都有時以 official 為準，user 那一期不轉，只列出答案不一致的題號。
+SOURCES = {
+    "official": {"dir": ROOT / "refs" / "tabf" / "past", "tag": "t", "source": "tabf-official", "file": "tabf"},
+    "user": {"dir": ROOT / "refs" / "user" / "tabf", "tag": "u", "source": "user-import", "file": "user"},
+}
 OUT = ROOT / "data" / "local" / "src" / "bic"
+REPORT = ROOT / "data" / "local" / "抽檢" / "跨期核對.md"
 SUBJECTS = {"law": "法規", "gen": "實務"}           # 本 App 範圍：一般金融組
 ANSWER_COL = {"law": 0, "gen": 1}                   # 答案卷第一節＝法規、第二節＝實務
 
@@ -59,29 +67,26 @@ def pdftext(pdf: Path, mode: str) -> str:
     return r.stdout.decode("utf-8", "replace")
 
 
-def find_file(name: str):
-    for d in REFS:
-        p = d / name
-        if p.exists():
-            return p
-    return None
+def find_file(name: str, src: str):
+    p = SOURCES[src]["dir"] / name
+    return p if p.exists() else None
 
 
-def files_for(period: int):
-    law = find_file(f"第{period}期_一般金融_法規.pdf") or find_file(f"第{period}期_法規(一般消費共用).pdf")
-    gen = find_file(f"第{period}期_一般金融_實務.pdf")
-    ans = find_file(f"第{period}期_一般金融_答案.pdf")
+def files_for(period: int, src: str = "official"):
+    law = find_file(f"第{period}期_一般金融_法規.pdf", src) or find_file(f"第{period}期_法規(一般消費共用).pdf", src)
+    gen = find_file(f"第{period}期_一般金融_實務.pdf", src)
+    ans = find_file(f"第{period}期_一般金融_答案.pdf", src)
     return {"law": law, "gen": gen, "ans": ans}
 
 
-def available_periods():
+def available_periods(src: str = "official"):
     ps = set()
-    for d in REFS:
-        if d.exists():
-            for p in d.glob("第*期_*.pdf"):
-                m = re.match(r"第(\d+)期_", p.name)
-                if m:
-                    ps.add(int(m.group(1)))
+    d = SOURCES[src]["dir"]
+    if d.exists():
+        for p in d.glob("第*期_*.pdf"):
+            m = re.match(r"第(\d+)期_", p.name)
+            if m:
+                ps.add(int(m.group(1)))
     return sorted(ps)
 
 
@@ -256,6 +261,16 @@ def convert_period(period, texts):
     a_rows, ea = answers_raw(texts["ans_raw"])
     b_rows, eb = answers_simple(texts["ans_simple"])
     errs += [f"第{period}期 {e}" for e in ea + eb]
+    # C9：消費金融答案卷的第一節（法規）是同一份法規卷的答案，必須跟一般金融的逐題相同
+    if texts.get("ans_con_raw"):
+        cp, cg, _ = answer_meta(texts["ans_con_raw"])
+        c_rows, ec = answers_raw(texts["ans_con_raw"])
+        if cp != period or cg != "消費金融":
+            errs.append(f"第{period}期 C9 消費金融答案卷標題不符（期別 {cp}、組別 {cg}）")
+        diff = [q for q in range(1, 51) if (a_rows.get(q) or [None])[0] != (c_rows.get(q) or [None])[0]]
+        if diff:
+            errs.append(f"第{period}期法規 C9 一般金融與消費金融答案卷的法規欄不同：" +
+                        "、".join(f"第 {q} 題 一般={(a_rows.get(q) or [None])[0]} 消費={(c_rows.get(q) or [None])[0]}" for q in diff))
     out = {}
     for subj, zh in SUBJECTS.items():
         label = f"第{period}期{zh}"
@@ -276,29 +291,33 @@ def convert_period(period, texts):
     return out, errs
 
 
-def read_texts(period):
-    f = files_for(period)
+def read_texts(period, src="official"):
+    f = files_for(period, src)
     miss = [k for k, v in f.items() if v is None]
     if miss:
         return None, miss
+    con = find_file(f"第{period}期_消費金融_答案.pdf", src)   # 有的話拿來做 C9（法規欄交叉核對）
     return {"law": pdftext(f["law"], "-raw"), "gen": pdftext(f["gen"], "-raw"),
-            "ans_raw": pdftext(f["ans"], "-raw"), "ans_simple": pdftext(f["ans"], "-simple")}, []
+            "ans_raw": pdftext(f["ans"], "-raw"), "ans_simple": pdftext(f["ans"], "-simple"),
+            "ans_con_raw": pdftext(con, "-raw") if con else None}, []
 
 
 # ------------------------------------------------------------------ 輸出
-def render(period, subj, block):
+def render(period, subj, block, src="official"):
     zh = SUBJECTS[subj]
+    meta = SOURCES[src]
+    origin = "TABF 官網下載的官方 PDF" if src == "official" else "使用者提供的 PDF（推定官方、無法逐位元組核對）"
     lines = [f"# TABF 第{period}期 銀行內部控制與內部稽核測驗（一般金融）— {zh}",
-             "# 由 scripts/import_tabf.py 從官方 PDF 轉出；本機自用，不得入庫或公開。",
-             f"# 答案以測驗當時法規為準；law_as_of 取答案卷的疑義申請起日（測驗後約兩天）。", ""]
+             f"# 由 scripts/import_tabf.py 轉出；來源：{origin}。本機自用，不得入庫或公開。",
+             "# 答案以測驗當時法規為準；law_as_of 取答案卷的疑義申請起日（測驗後約兩天）。", ""]
     for q in block["questions"]:
-        lines += [f"=== bic-{subj}-t{period}-{q['qno']:03d}",
+        lines += [f"=== bic-{subj}-{meta['tag']}{period}-{q['qno']:03d}",
                   "type: single",
                   f"chapter: bic.{subj}",
                   f"stem: {q['stem']}"]
         lines += [f"{k}: {o}" for k, o in zip("1234", q["options"])]
         lines += [f"answer: {q['answer']}",
-                  "source: tabf-official",
+                  f"source: {meta['source']}",
                   f"period: {period}",
                   f"qno: {q['qno']}",
                   f"page: {q['page']}",
@@ -307,22 +326,58 @@ def render(period, subj, block):
     return "\n".join(lines)
 
 
+def norm_key(q):
+    """跨期比對用：題幹＋四個選項，去掉空白與全半形標點差異。"""
+    s = q["stem"] + "|" + "|".join(q["options"])
+    return re.sub(r"[\s，,。．.、？?：:（）()「」『』]", "", s)
+
+
+def cross_period(all_out):
+    """資訊性：同一題（題幹＋選項完全相同）出現在不同期別、而答案不同的，列出來。
+    不算錯誤——可能是法規修訂後答案改了；但使用者若照舊答案背，就是要注意的題。"""
+    seen = {}
+    for (src, p), out in all_out.items():
+        for subj, block in out.items():
+            for q in block["questions"]:
+                seen.setdefault(norm_key(q), []).append((src, p, subj, q["qno"], q["answer"]))
+    dup = [v for v in seen.values() if len({(x[0], x[1]) for x in v}) > 1]
+    diff = [v for v in dup if len({x[4] for x in v}) > 1]
+    return dup, diff
+
+
 def main(argv):
     check_only = "--check-only" in argv
     periods = None
     if "--periods" in argv:
         periods = [int(x) for x in argv[argv.index("--periods") + 1:] if x.isdigit()]
-    todo = periods or available_periods()
-    all_out, all_errs, skipped = {}, [], []
-    for p in todo:
-        texts, miss = read_texts(p)
-        if texts is None:
-            skipped.append(f"第{p}期（缺 {'、'.join({'law': '法規卷', 'gen': '一般金融實務卷', 'ans': '一般金融答案'}[m] for m in miss)}）")
-            continue
-        out, errs = convert_period(p, texts)
-        all_errs += errs
-        if not errs:
-            all_out[p] = out
+    all_out, all_errs, skipped, overlap = {}, [], [], []
+    names = {"law": "法規卷", "gen": "一般金融實務卷", "ans": "一般金融答案"}
+    official_periods = set()
+    for src in ("official", "user"):
+        todo = [p for p in (periods or available_periods(src)) if p in available_periods(src)]
+        for p in todo:
+            texts, miss = read_texts(p, src)
+            label = "官網" if src == "official" else "使用者提供"
+            if texts is None:
+                skipped.append(f"{label} 第{p}期（缺 {'、'.join(names[m] for m in miss)}）")
+                continue
+            out, errs = convert_period(p, texts)
+            all_errs += [f"[{label}] {e}" for e in errs]
+            if errs:
+                continue
+            if src == "official":
+                official_periods.add(p)
+                all_out[(src, p)] = out
+            elif p in official_periods:
+                # 同一期兩邊都有：以官網為準，使用者那份不轉；答案不一致的題號列出來
+                for subj in SUBJECTS:
+                    ofs = {q["qno"]: q["answer"] for q in all_out[("official", p)][subj]["questions"]}
+                    for q in out[subj]["questions"]:
+                        if ofs.get(q["qno"]) != q["answer"]:
+                            overlap.append(f"第{p}期{SUBJECTS[subj]}第 {q['qno']} 題：官網 {ofs.get(q['qno'])}、使用者 {q['answer']}")
+                skipped.append(f"使用者提供 第{p}期（官網也有，以官網為準）")
+            else:
+                all_out[(src, p)] = out
     for s in skipped:
         print(f"• 略過 {s}")
     if all_errs:
@@ -333,21 +388,36 @@ def main(argv):
     if not all_out:
         print("IMPORT-TABF FAILED：沒有任何一期的試卷與答案齊全")
         return 1
+    if overlap:
+        print(f"! 同一期兩個來源答案不一致 {len(overlap)} 題（以官網為準）：")
+        for o in overlap:
+            print(f"  {o}")
+    dup, diff = cross_period(all_out)
     total = sum(len(b["questions"]) for o in all_out.values() for b in o.values())
-    summary = "、".join(f"第{p}期 法規 {len(o['law']['questions'])}＋實務 {len(o['gen']['questions'])}" for p, o in sorted(all_out.items()))
+    summary = "、".join(f"{'官網' if s == 'official' else '使用者'}第{p}期 法規 {len(o['law']['questions'])}＋實務 {len(o['gen']['questions'])}"
+                        for (s, p), o in sorted(all_out.items(), key=lambda kv: kv[0][1]))
+    print(f"• 跨期重複出現的題目 {len(dup)} 組；其中答案不同 {len(diff)} 組（資訊，不擋）")
     if check_only:
-        print(f"IMPORT-TABF OK（只檢查）：{total} 題全部通過 C1～C8｜{summary}")
+        print(f"IMPORT-TABF OK（只檢查）：{total} 題全部通過 C1～C9｜{summary}")
         return 0
     OUT.mkdir(parents=True, exist_ok=True)
-    pending = {OUT / f"tabf-p{p}-{s}.txt": render(p, s, b) for p, o in all_out.items() for s, b in o.items()}
+    pending = {OUT / f"{SOURCES[s]['file']}-p{p}-{subj}.txt": render(p, subj, b, s)
+               for (s, p), o in all_out.items() for subj, b in o.items()}
+    report = ["# 跨期與跨來源核對（本機自用，含題號、不含題目內容）", "",
+              f"- 同一期兩個來源答案不一致：{len(overlap)} 題（以官網為準）", *[f"  - {o}" for o in overlap], "",
+              f"- 跨期重複出現的題目：{len(dup)} 組；答案不同：{len(diff)} 組（可能是法規修訂，不一定是錯）"]
+    for v in diff:
+        report.append("  - " + "；".join(f"{'官網' if x[0] == 'official' else '使用者'}第{x[1]}期{SUBJECTS[x[2]]}第 {x[3]} 題＝{x[4]}" for x in sorted(v, key=lambda x: x[1])))
+    pending[REPORT] = "\n".join(report) + "\n"
     tmps = []
     for path, text in pending.items():
-        tmp = path.with_suffix(".txt.tmp")
+        path.parent.mkdir(parents=True, exist_ok=True)
+        tmp = path.with_name(path.name + ".tmp")
         tmp.write_text(text, encoding="utf-8", newline="\n")
         tmps.append((tmp, path))
     for tmp, path in tmps:
         tmp.replace(path)
-    print(f"IMPORT-TABF OK：{total} 題通過 C1～C8，寫出 {len(pending)} 個檔到 data/local/src/bic/｜{summary}")
+    print(f"IMPORT-TABF OK：{total} 題通過 C1～C9，寫出 {len(pending) - 1} 個題庫檔到 data/local/src/bic/｜{summary}")
     return 0
 
 

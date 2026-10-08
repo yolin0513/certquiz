@@ -59,9 +59,13 @@ def identify(text: str):
     if m:
         info["count"] = int(m.group(1))
     if "正確答案" in text or re.search(r"題號.*節次|節次.*題號", text):
+        # 答案卷的標題行（【第N期…（一般金融類）】試題正確答案）在抽出的文字裡不一定排在最前面
+        title = next((ln for ln in text.splitlines() if "正確答案" in ln), "")
+        m = re.search(r"第\s*(\d+)\s*期", title)
+        info["period"] = int(m.group(1)) if m else info["period"]
         info["kind"] = "答案"
         info["subject"] = "答案"
-        info["group"] = "消費金融" if "消費" in text[:200] else "一般金融"
+        info["group"] = "消費金融" if "消費金融類" in title else ("一般金融" if "一般金融類" in title else None)
     elif info["subject"]:
         info["kind"] = "試卷"
     return info

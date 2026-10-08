@@ -112,7 +112,12 @@ def main():
          lambda: shift_col_A(texts["ans_raw"], 1, 80), "實務 C", next(q for q in range(1, 80) if gen_ans[q] != gen_ans[q + 1])),
         ("答案 A 與 B 都少了第 80 列（母體）", None, None, "實務 C4/C7", 80),
         ("答案卷標題是別的期別", "ans_raw", lambda: texts["ans_raw"].replace(f"【第{P}期", "【第48期"), "C8", None),
+        ("消費金融答案卷的法規第 30 題跟一般金融不同（C9）", "ans_con_raw",
+         lambda: set_raw_answer(texts["ans_con_raw"], 30, 0, law_ans[30] % 4 + 1), "法規 C9", 30),
     ]
+    if not texts.get("ans_con_raw"):
+        print(f"TEST-IMPORT ABORT：第{P}期沒有消費金融答案卷，驗不了 C9")
+        return 2
 
     fails = 0
     for desc, field, fn, label_part, q in cases:
@@ -138,19 +143,20 @@ def main():
         print(f"TEST-IMPORT ABORT：第{good_p}期 PDF 不齊（{gmiss}），驗不了部分寫入")
         return 2
     with tempfile.TemporaryDirectory(prefix="certquiz-import-") as tmp:
-        orig_read, orig_out = T.read_texts, T.OUT
+        orig_read, orig_out, orig_rep = T.read_texts, T.OUT, T.REPORT
         try:
             bad = dict(texts)
             bad["ans_raw"] = set_raw_answer(texts["ans_raw"], k_law, 0, law_ans[k_law + 1])
-            T.read_texts = lambda p: (bad, []) if p == P else ((good_texts, []) if p == good_p else (None, ["x"]))
+            T.read_texts = lambda p, src="official": ((bad, []) if p == P else ((good_texts, []) if p == good_p else (None, ["x"]))) if src == "official" else (None, ["x"])
             T.OUT = Path(tmp) / "out"
+            T.REPORT = Path(tmp) / "report.md"
             rc = T.main(["--periods", str(good_p), str(P)])
             written = [p for p in Path(tmp).rglob("*") if p.is_file()]
             ok = rc == 1 and not written
             print(f"{'✓' if ok else '✗'} 第{good_p}期好、第{P}期壞時一個檔都不寫：回傳 {rc}，寫出 {len(written)} 個檔")
             fails += 0 if ok else 1
         finally:
-            T.read_texts, T.OUT = orig_read, orig_out
+            T.read_texts, T.OUT, T.REPORT = orig_read, orig_out, orig_rep
 
     if fails:
         print(f"TEST-IMPORT FAILED：{fails} 項不符")
