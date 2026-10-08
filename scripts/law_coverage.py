@@ -367,7 +367,10 @@ def fsc_lookup(name):
         hist = []
         if has_h:
             hl = get(f"{FSC}/LawContentHistoryList.aspx?id={i}", RAW / f"fsc-hist-{i}.html")
-            hist = sorted({roc(d) for d in re.findall(r">\s*(\d{2,3}\.\d{2}\.\d{2})\s*<", hl)} - {None})
+            # 只讀歷史表格的列（「序｜異動日期｜法規名稱」那張表）：頁尾的「系統版本／系統更新日期」也是 115.09.10 這種格式，
+            # 第一版沒限定範圍，把頁尾日期當成修正日期（2026-10-09 查出；驗尺當時只查「有沒有某一天」，沒查「有沒有多出不該有的日」）
+            table = hl[hl.find("異動日期"):hl.find("系統版本")] if "異動日期" in hl else ""
+            hist = sorted({roc(d) for d in re.findall(r">\s*(\d{2,3}\.\d{2}\.\d{2})\s*<", table)} - {None})
         exact.append({"id": i, "current": roc(m.group(1)) if m else None, "has_history": has_h, "history": hist})
     return {"hits": hits[:10], "exact": exact}
 
@@ -377,7 +380,14 @@ def fsc():
     missing = [n for n, v in src.items() if not v["moj"]]
     # 驗尺：內控稽核辦法在金管會系統一定查得到，而且歷史法規裡有 110.09.23（2021-09-23）那一版；編造的名稱一定查不到
     r = fsc_lookup("金融控股公司及銀行業內部控制及稽核制度實施辦法")
-    ok_pos = any(e["has_history"] and "20210923" in e["history"] for e in r["exact"])
+    # 正對照兩個方向：要有 110.09.23 那一版；而且金管會列的每一個歷史日期都必須是全國法規資料庫也有的版本日期、不晚於今天
+    moj = json.loads(SOURCES.read_text(encoding="utf-8"))["金融控股公司及銀行業內部控制及稽核制度實施辦法"]["moj"]
+    moj_dates = set(moj["old_versions"]) | {moj["current_date"]}
+    today = time.strftime("%Y%m%d")
+    fh = [e for e in r["exact"] if e["has_history"]]
+    extra = sorted({d for e in fh for d in e["history"] if d not in moj_dates or d > today})
+    ok_pos = any("20210923" in e["history"] for e in fh) and not extra
+    print(f"  驗尺（日期）：金管會歷史日期 {[e['history'] for e in fh]}｜不在全國法規資料庫版本清單或晚於今天的：{extra}")
     neg = fsc_lookup("銀行業辦理月球分行業務管理辦法")
     ok = ok_pos and not neg["exact"]
     print(f"{'✓' if ok else '✗'} 驗尺：內控稽核辦法 → {[(e['id'], e['has_history'], len(e['history'])) for e in r['exact']]}（要有歷史法規且含 20210923）；編造的名稱 → {neg['exact']}（應查不到）")
