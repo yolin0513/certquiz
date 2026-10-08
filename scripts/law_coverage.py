@@ -339,6 +339,63 @@ def score():
     return 0
 
 
+# ---------------------------------------------------------------- 全國法規資料庫查不到的那幾部：到金管會主管法規查詢系統查（Dispatch 2026-10-08 選 c）
+FSC = "https://law.fsc.gov.tw"
+FSC_OUT = OUT / "sources-fsc.json"
+
+
+def roc(s):
+    """「110.09.23」或「民國 110 年 09 月 23 日」→ 20210923。"""
+    m = re.search(r"(\d{2,3})\s*[.年]\s*(\d{1,2})\s*[.月]\s*(\d{1,2})", s)
+    return f"{int(m.group(1)) + 1911:04d}{int(m.group(2)):02d}{int(m.group(3)):02d}" if m else None
+
+
+def fsc_lookup(name):
+    """回傳 {'hits': [(id, 標題)], 'exact': [{id, current, history:[日期], has_history}]}。"""
+    safe = re.sub(r"[^\w]", "_", name)[:60]
+    html = get(f"{FSC}/SearchAllResultList.aspx?KW={urllib.parse.quote(name)}&type=B", RAW / f"fsc-B-{safe}.html")
+    t = re.sub(r"<script.*?</script>", "", html, flags=re.S)
+    hits = [(i, re.sub(r"\s", "", x)) for i, x in re.findall(r'href="LawContent\.aspx\?id=([A-Z0-9]+)[^"]*"[^>]*>\s*(?:<[^>]+>\s*)*([^<]{2,120})', t)]
+    exact = []
+    for i, title in hits:
+        if title != name or i in [e["id"] for e in exact]:
+            continue
+        c = get(f"{FSC}/LawContent.aspx?id={i}", RAW / f"fsc-content-{i}.html")
+        ct = re.sub(r"<[^>]+>", " ", re.sub(r"<script.*?</script>|<style.*?</style>", "", c, flags=re.S))
+        m = re.search(r"(?:修正日期|發布日期|發文日期)\s*[：:]\s*(民國\s*\d+\s*年\s*\d+\s*月\s*\d+\s*日|\d{2,3}\.\d{1,2}\.\d{1,2})", ct)
+        has_h = f"LawContentHistoryList.aspx?id={i}" in c
+        hist = []
+        if has_h:
+            hl = get(f"{FSC}/LawContentHistoryList.aspx?id={i}", RAW / f"fsc-hist-{i}.html")
+            hist = sorted({roc(d) for d in re.findall(r">\s*(\d{2,3}\.\d{2}\.\d{2})\s*<", hl)} - {None})
+        exact.append({"id": i, "current": roc(m.group(1)) if m else None, "has_history": has_h, "history": hist})
+    return {"hits": hits[:10], "exact": exact}
+
+
+def fsc():
+    src = json.loads(SOURCES.read_text(encoding="utf-8"))
+    missing = [n for n, v in src.items() if not v["moj"]]
+    # 驗尺：內控稽核辦法在金管會系統一定查得到，而且歷史法規裡有 110.09.23（2021-09-23）那一版；編造的名稱一定查不到
+    r = fsc_lookup("金融控股公司及銀行業內部控制及稽核制度實施辦法")
+    ok_pos = any(e["has_history"] and "20210923" in e["history"] for e in r["exact"])
+    neg = fsc_lookup("銀行業辦理月球分行業務管理辦法")
+    ok = ok_pos and not neg["exact"]
+    print(f"{'✓' if ok else '✗'} 驗尺：內控稽核辦法 → {[(e['id'], e['has_history'], len(e['history'])) for e in r['exact']]}（要有歷史法規且含 20210923）；編造的名稱 → {neg['exact']}（應查不到）")
+    if not ok:
+        print("FSC ABORT：驗尺失敗，查得到幾部的數字不能下結論")
+        return 2
+    res = {}
+    for n in missing:
+        r = fsc_lookup(n)
+        res[n] = {"count": src[n]["count"], **r}
+        ex = r["exact"]
+        desc = "；".join(f"{e['id']} 現行 {e['current']}・歷史法規 {'有 ' + str(len(e['history'])) + ' 版（' + (e['history'][0] if e['history'] else '') + ' 起）' if e['has_history'] else '無'}" for e in ex)
+        print(f"  {'✓' if ex else '·'} {n}（{src[n]['count']} 題）：{desc or '名稱完全相同的查不到'}" + ("" if ex else f"｜相近結果：{[h[1][:24] for h in r['hits'][:3]]}"))
+    FSC_OUT.write_text(json.dumps(res, ensure_ascii=False, indent=1), encoding="utf-8")
+    print(f"FSC OK：{sum(1 for v in res.values() if v['exact'])}／{len(res)} 部在金管會主管法規查詢系統查得到（名稱完全相同）")
+    return 0
+
+
 if __name__ == "__main__":
     cmd = sys.argv[1] if len(sys.argv) > 1 else ""
-    sys.exit({"names": names, "fetch": fetch, "report": report, "sample": sample, "lock": lock, "score": score}.get(cmd, lambda: (print("用法：names｜fetch｜report｜sample｜lock me|agent｜score"), 2)[1])())
+    sys.exit({"names": names, "fetch": fetch, "report": report, "sample": sample, "lock": lock, "score": score, "fsc": fsc}.get(cmd, lambda: (print("用法：names｜fetch｜report｜sample｜lock me|agent｜score"), 2)[1])())
