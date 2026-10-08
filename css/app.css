@@ -17,6 +17,7 @@ h3 { font-size: 1rem; margin: 16px 0 8px; }
 p { margin: 6px 0; }
 .card { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 16px; margin: 0 0 16px; }
 .muted, .notice, .src { color: var(--muted); font-size: .9rem; }
+.src.basis { overflow-wrap: anywhere; }
 .stat { font-size: .95rem; }
 .row { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
 .btn { display: inline-block; padding: 10px 16px; border-radius: 10px; border: 1px solid var(--line); background: var(--card);

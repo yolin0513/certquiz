@@ -172,6 +172,14 @@ export function sourceLabel(q) {
   const law = q.law_as_of ? `（法規基準：${q.law_as_of}）` : '';
   if (q.source === 'tabf-official') return `官方歷屆試題・${where}${law}`;
   if (q.source === 'user-import') return `使用者提供的官方歷屆試題・${where}${law}`;
-  if (q.source && q.source.startsWith('original')) return '原創練習題，不是考題';
+  if (q.source && q.source.startsWith('original')) {
+    const obj = q.objective ? `・官方大綱 ${q.objective}${q.skill ? `（第 ${q.skill} 細項）` : ''}` : '';
+    return `原創練習題，不是考題${obj}`;
+  }
   return '';
+}
+
+/** 原創題的依據網址：只當文字顯示、不做成連結（做成連結＝新增對外連線，見 docs/I） */
+export function basisText(q) {
+  return q.basis ? `依據（官方文件）：${q.basis}` : '';
 }

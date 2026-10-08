@@ -33,7 +33,7 @@ def block(qid, chapter, stem, opts, ans, source, **extra):
 
 
 GOOD_AZ = block("az900-a-o-0001", "az900.all", "Which is a benefit of cloud?", ["High availability", "Lock-in", "CapEx only", "None"], 1, "original-ai",
-                objective="A.2", basis="https://learn.microsoft.com/en-us/azure/example-page",
+                objective="A.2", skill="1", basis="https://learn.microsoft.com/en-us/azure/example-page",
                 basis_quote="This is a verbatim sentence copied from the cited page.", explain="解析。")
 GOOD_BIC_47 = block("bic-law-t47-001", "bic.law", "同一題", ["甲", "乙", "丙", "丁"], 2, "tabf-official", period=47, law_as_of="2025-03-17")
 GOOD_BIC_40 = block("bic-law-u40-007", "bic.law", "同一題", ["甲", "乙", "丙", "丁"], 2, "user-import", period=40, law_as_of="2021-11-22")
@@ -112,6 +112,8 @@ def main():
         ("AZ-900 缺 basis_quote（真值不在文件上）→ 擋、點名", {"az900/a.txt": GOOD_AZ.replace("basis_quote: This is a verbatim sentence copied from the cited page.\n", "")}, {}, "public", False, ["az900-a-o-0001"]),
         ("AZ-900 的 basis 不是 learn.microsoft.com → 擋、點名", {"az900/a.txt": GOOD_AZ.replace("https://learn.microsoft.com/en-us/azure/example-page", "https://example.com/x")}, {}, "public", False, ["az900-a-o-0001"]),
         ("AZ-900 的 objective 不在官方大綱 → 擋、點名", {"az900/a.txt": GOOD_AZ.replace("objective: A.2", "objective: Z.9")}, {}, "public", False, ["az900-a-o-0001"]),
+        ("AZ-900 的 skill 超出該節次的官方細項數 → 擋、點名", {"az900/a.txt": GOOD_AZ.replace("skill: 1", "skill: 5")}, {}, "public", False, ["az900-a-o-0001"]),
+        ("AZ-900 缺 skill → 擋、點名", {"az900/a.txt": GOOD_AZ.replace("skill: 1\n", "")}, {}, "public", False, ["az900-a-o-0001"]),
         ("一題有錯、其他題都對 → 一個檔都不寫", {"az900/a.txt": GOOD_AZ, "az900/b.txt": GOOD_AZ.replace("az900-a-o-0001", "az900-a-o-0002").replace("answer: 1", "answer: 9")}, {}, "public", False, ["az900-a-o-0002"]),
     ]
     fails = sum(0 if run_case(*c) else 1 for c in cases)

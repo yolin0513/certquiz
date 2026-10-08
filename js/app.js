@@ -137,7 +137,8 @@ async function practiceView(gen, q) {
       }
       feedback.replaceChildren(h('p', { class: correct ? 'ok' : 'ng', text: correct ? '答對了' : `答錯了，正解是 (${item.answer})` }),
         h('p', { class: 'src', text: L.sourceLabel(item) }),
-        item.explain ? h('p', { class: 'explain', text: item.explain }) : null);
+        item.explain ? h('p', { class: 'explain', text: item.explain }) : null,
+        item.basis ? h('p', { class: 'src basis', text: L.basisText(item) }) : null);
       feedback.hidden = false;
       next.hidden = false;
       results.push({ item, k, correct });
@@ -147,7 +148,9 @@ async function practiceView(gen, q) {
 
     render(gen,
       h('div', { class: 'bar' }, h('a', { class: 'back', href: '#/', text: '← 結束' }), h('span', { text: `${i + 1} / ${picked.length}` })),
-      h('section', { class: 'card q' }, h('p', { class: 'stem', text: item.stem }), h('div', { class: 'opts' }, opts), feedback, next));
+      h('section', { class: 'card q' },
+        item.source && item.source.startsWith('original') ? h('p', { class: 'src', text: L.sourceLabel(item) }) : null,
+        h('p', { class: 'stem', text: item.stem }), h('div', { class: 'opts' }, opts), feedback, next));
   };
 
   const showSummary = () => {
@@ -159,7 +162,8 @@ async function practiceView(gen, q) {
         h('ol', { class: 'wronglist' }, wrong.map(r => h('li', {},
           h('p', { text: r.item.stem }),
           h('p', { class: 'muted', text: `你選 (${r.k})，正解 (${r.item.answer}) ${r.item.options[r.item.answer - 1]}` }),
-          h('p', { class: 'src', text: L.sourceLabel(r.item) })))),
+          h('p', { class: 'src', text: L.sourceLabel(r.item) }),
+          r.item.basis ? h('p', { class: 'src basis', text: L.basisText(r.item) }) : null))),
         h('div', { class: 'row' }, h('a', { class: 'btn primary', href: `#/setup?cert=${certId}`, text: '再練一輪' }),
           h('a', { class: 'btn', href: '#/', text: '回首頁' }))));
   };
@@ -264,7 +268,8 @@ async function examView(gen, q) {
           h('ol', { class: 'wronglist' }, missed.map(x => h('li', {},
             h('p', { text: x.stem }),
             h('p', { class: 'muted', text: `${answers.has(x.id) ? `你選 (${answers.get(x.id)})` : '未作答'}，正解 (${x.answer}) ${x.options[x.answer - 1]}` }),
-            h('p', { class: 'src', text: L.sourceLabel(x) }))))) : null);
+            h('p', { class: 'src', text: L.sourceLabel(x) }),
+            x.basis ? h('p', { class: 'src basis', text: L.basisText(x) }) : null)))) : null);
     }
 
     // 確認框放在固定於頂端的那一塊裡：捲到下面按「交卷」時，確認框才看得到（放在頁首會被固定列蓋住、看不到）

@@ -117,6 +117,7 @@
    - 第三方題庫（書商、補習班、阿摩、MeasureUp）不抓、不存、不複製。
    - **TABF 官方題只放 `refs/` 與 `data/local/`**（不進 repo、不部署、不上傳任何伺服器），由使用者在 App 內匯入自己的手機。
    - AZ-900 題目的 `source` 只能是 `original-*`；解析的依據放 Learn 連結，不貼原文段落；畫面標「練習題，不是考題」。
+     - **⚠ 與 `docs/I` 不一致（2026-10-08 發現，待 Dispatch 決定）**：真值規則要求每題存一段逐字原文 `basis_quote`（一兩句），題目檔進 repo 時原文也會跟著公開。查到的授權：Azure 產品文件的原始 repo（GitHub MicrosoftDocs/azure-docs）是 CC BY 4.0；Learn 網站的一般使用條款寫「除非另有說明」僅限個人非商業使用；訓練模組（training/modules）與 Entra 文件的授權**未查證**。決定之前：`basis_quote` 不輸出到 App（`build_data.py` 已拿掉）、App 不顯示原文、題目檔不進 repo。
    - 下載任何檔案前要使用者同意；只從官方網域下載。
 6. **題目 id 寫死在原始檔、永不改、永不重用**；刪題改標 `retired`（見 `docs/D_架構草案.md` §0、§2）。
 7. 回報分開寫「實際查到的」與「推論的」，查不到寫「在已檢索範圍內未見（檢索了 X）」。
@@ -125,6 +126,8 @@
    - **例行推送不用每次問**，條件三個都要：走 `bash scripts/pushsafe.sh`、推完跑 `python scripts/verify_live.py https://yolin0513.github.io/certquiz/` 與 `node scripts/test_browser.mjs --live https://yolin0513.github.io/certquiz/`、兩邊都過。
    - **以下任一情況要先問**：改 repo 可見性；改寫已推送的歷史；新增題庫或題目檔進 repo；新增任何對外連線；放寬自查（`selfcheck.py`、`check_privacy.py`、`.gitignore`）的規則。
    - 改雲端帳號設定、建新的遠端 repo，照舊先問。
+   - **「對外連線」的界線**（Dispatch 2026-10-08）：這條管的是**使用者裝置上跑的 App 會連到哪裡**——它要防的是使用者的作答資料被送出去。開發工具在開發者自己的機器上讀公開的官方文件（例如 `scripts/verify_basis.py` 讀 learn.microsoft.com、`verify_live.py` 讀自己部署的網站），不是同一種風險，**不必先問**。但開發工具仍不得送出使用者資料、本機題庫或私人清單裡的任何內容，也不得登入或抓需要登入的頁面（規則 3）。
+   - **規則存在是為了保護使用者的資料，不是為了讓查證變難。**不要為了「看起來守規則」而不寫查證工具；拿不準時，判斷標準是「這個連線會不會讓使用者的資料離開他的裝置」。
 10. **兩種來源分開管**：`refs/tabf/`＝本 Session 從官網下載（可逐位元組對官網）；`refs/user/`＝使用者提供（記錄使用者說的來源、檔案判斷的來源、兩者對不對得上）。使用者提供的題目轉出來標 `source: user-import`、id 用 `u<期>`（例如 `bic-law-u39-001`），**不覆蓋官網那批**；同一期同一題兩邊都有時，**答案一律以官網 PDF 為準**，不一致的題號列給使用者看。判斷不出來源的標「來源不明」；看得出是第三方整理或轉載的，只供使用者本人使用、不轉成要散布的題庫、不入庫，並在回報裡點名。
 11. **repo 會公開**：防護設在 commit 之前。commit 前自查（pre-commit）與 push 前歷史掃描（pre-push）不得停用；**新 clone 要先下 `git config core.hooksPath .githooks`**（本機設定不跟 repo 走）。改過 `scripts/selfcheck.py` 或 `.gitignore`，要跑 `python scripts/selfcheck.py --selftest` 全部符合才能 commit。不用 `--no-verify`。
 12. 作答紀錄只存在使用者手機的 IndexedDB，不得有任何上傳；第二階段用 CSP＋靜態檢查＋瀏覽器網路實測三層保證（G M1-8）。

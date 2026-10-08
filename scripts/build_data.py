@@ -132,8 +132,11 @@ def validate(q, where, cert_ids, mode):
         errs.append(f"{tag}：內控題必須有 law_as_of（YYYY-MM-DD）")
     if cert == "az900":
         # 原創題的真值在官方文件上（docs/I_原創題的真值.md）：缺任何一個依據欄位就不收
-        if q.get("objective", "") not in OBJECTIVES.get("az900", set()):
+        n_skills = OBJECTIVES.get("az900", {}).get(q.get("objective", ""))
+        if n_skills is None:
             errs.append(f"{tag}：objective {q.get('objective')!r} 不是官方大綱的節次")
+        elif not (q.get("skill", "").isdigit() and 1 <= int(q["skill"]) <= n_skills):
+            errs.append(f"{tag}：skill {q.get('skill')!r} 必須是 {q.get('objective')} 底下第 1～{n_skills} 個官方細項")
         if not q.get("basis", "").startswith("https://learn.microsoft.com/en-us/"):
             errs.append(f"{tag}：basis 必須是 https://learn.microsoft.com/en-us/ 的官方文件網址")
         if not 20 <= len(q.get("basis_quote", "")) <= 400:
@@ -146,10 +149,11 @@ def validate(q, where, cert_ids, mode):
         "answer": (keys.index(ans) + 1) if keys and ans in keys else None,
         "source": src,
     }
-    for k in ("period", "qno", "page"):
+    for k in ("period", "qno", "page", "skill"):
         if q.get(k, "").isdigit():
             out[k] = int(q[k])
-    for k in ("law_as_of", "basis", "basis_quote", "objective", "explain", "status"):
+    # basis_quote 只供核對、不輸出到 App（STATUS 規則 5 待決）
+    for k in ("law_as_of", "basis", "objective", "explain", "status"):
         if q.get(k):
             out[k] = q[k]
     return out, errs
@@ -166,8 +170,24 @@ def load_certs():
     OBJECTIVES.clear()
     for c in data["certs"]:
         if c.get("syllabus"):
-            OBJECTIVES[c["id"]] = {o["id"] for o in c["syllabus"]["objectives"]}
+            OBJECTIVES[c["id"]] = {o["id"]: len(o.get("skills", [])) for o in c["syllabus"]["objectives"]}
     return data["certs"]
+
+
+def coverage(certs, qs):
+    """AZ-900 出題進度：每個節次 已出／配額，以及還沒出過題的官方細項（docs/J_AZ900出題配額.md）。"""
+    syl = next((c.get("syllabus") for c in certs if c["id"] == "az900"), None)
+    if not syl:
+        return []
+    az = [q for q in qs if q["cert"] == "az900"]
+    lines = [f"AZ-900 進度：{len(az)}／{syl.get('total', '?')} 題"]
+    for o in syl["objectives"]:
+        mine = [q for q in az if q.get("objective") == o["id"]]
+        hit = {q.get("skill") for q in mine}
+        empty = [str(i) for i in range(1, len(o.get("skills", [])) + 1) if int(i) not in hit]
+        over = "（超過配額）" if len(mine) > o.get("quota", 0) else ""
+        lines.append(f"  {o['id']} {len(mine):>3}／{o.get('quota', '?'):<3}{over} 還沒出到的細項：{'、'.join(empty) or '無'}")
+    return lines
 
 
 def check_draft(certs, draft_dir: Path):
@@ -307,6 +327,15 @@ def main(argv):
                     print(f"  {e}")
                 return 1
             print(f"DRAFT OK：{len(files)} 個檔、{len(qs)} 題，全部符合公開題庫規則（含 AZ-900 依據欄位）")
+            _, pub, _ = collect(SRC, {c["id"] for c in certs}, "public")
+            ids = {q["id"] for q in pub}
+            dup = [q["id"] for q in qs if q["id"] in ids]
+            if dup:
+                print(f"DRAFT FAILED：草稿的 id 跟已入庫的題目重複：{dup}")
+                return 1
+            print(f"（進度含已入庫 {len(pub)} 題＋草稿 {len(qs)} 題）")
+            for ln in coverage(certs, pub + qs):
+                print(ln)
             return 0
         runs = [("public", build_public), ("local", build_local)] if check_only else \
                ([("local", build_local)] if "--local" in argv else [("public", build_public)])
