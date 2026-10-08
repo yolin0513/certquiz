@@ -63,3 +63,8 @@ th, td { text-align: left; padding: 6px 4px; border-bottom: 1px solid var(--line
 .study-opts li { margin: 4px 0; padding: 4px 6px; border-radius: 6px; }
 .study-opts li.right { background: var(--ok-bg); border: 1px solid var(--ok); }
 .study-q .stem { margin-top: 0; }
+/* 讀書模式：內控的警示卡與其他期問法 */
+.card.warn { border: 2px solid var(--ng); }
+.card.warn h3 { margin-top: 0; }
+.variant { border-top: 1px dashed var(--line); padding-top: 6px; margin-top: 6px; }
+details summary { cursor: pointer; margin: 6px 0; }

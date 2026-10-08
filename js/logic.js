@@ -44,7 +44,26 @@ export function validateImportPack(obj, knownCerts) {
       else if (t.dupOf) errors.push(`${q.id}：dupOf 指到的題本身也是重複題`);
     }
   });
-  return { ok: errors.length === 0, errors, cert: obj.cert, questions: errors.length ? [] : qs };
+  // 考點清單（只有本機匯入包有）：可省略；有的話每個考點至少兩期、兩題，題號都要在包內，題目標的考點要對得上
+  let points = [];
+  if (obj.points !== undefined) {
+    if (!Array.isArray(obj.points)) errors.push('考點清單格式不對');
+    else {
+      const codes = new Set();
+      obj.points.forEach((p, i) => {
+        const tag = p && p.id ? `考點 ${p.id}` : `第 ${i + 1} 個考點`;
+        if (!p || typeof p !== 'object' || !/^P\d{3}$/.test(p.id || '')) { errors.push(`${tag}：代號格式不對`); return; }
+        if (codes.has(p.id)) errors.push(`${tag}：代號重複`);
+        codes.add(p.id);
+        if (!Array.isArray(p.ids) || p.ids.length < 2 || p.ids.some(x => !byId.has(x))) errors.push(`${tag}：題號清單不對（至少兩題、都要在包內）`);
+        if (!Array.isArray(p.periods) || p.periods.length < 2) errors.push(`${tag}：期別至少要兩期`);
+        else (p.ids || []).forEach(x => { const q = byId.get(x); if (q && q.point !== p.id) errors.push(`${tag}：題目 ${x} 標的考點不是 ${p.id}`); });
+      });
+      qs.forEach(q => { if (q && q.point && !codes.has(q.point)) errors.push(`${q.id}：標的考點 ${q.point} 不在考點清單裡`); });
+      points = obj.points;
+    }
+  }
+  return { ok: errors.length === 0, errors, cert: obj.cert, questions: errors.length ? [] : qs, points: errors.length ? [] : points };
 }
 
 /** 練習時可出的題：不是重複題、沒有標 retired */
@@ -84,6 +103,8 @@ export function pickQuestions(pool, opts, progress = new Map()) {
   if (opts.source === 'official') qs = qs.filter(q => q.source === 'tabf-official');
   if (opts.source === 'user') qs = qs.filter(q => q.source === 'user-import');
   if (opts.objective) qs = qs.filter(q => q.objective === opts.objective);
+  if (opts.ids) qs = qs.filter(q => opts.ids.has(q.id));
+  if (opts.period) qs = qs.filter(q => String(q.period) === String(opts.period));
   if (opts.skill) qs = qs.filter(q => String(q.skill) === String(opts.skill));
   let ordered;
   if (opts.order === 'unseen') {
@@ -199,6 +220,42 @@ export function studyKey(q) {
   if (q.objective && q.skill) return `${q.cert}:${q.objective}#${q.skill}`;
   if (q.topic) return `${q.cert}:topic:${q.topic}`;
   return null;
+}
+
+/**
+ * 一題屬於哪些讀書單元（作答前讀過其中任一個，就算「作答前讀過」）：
+ * AZ-900 的節次#細項；內控的考點（point）與「科目＋期別」瀏覽頁。
+ */
+export function studyKeys(q) {
+  const keys = [];
+  const k = studyKey(q);
+  if (k) keys.push(k);
+  if (q.point) keys.push(`${q.cert}:point:${q.point}`);
+  if (q.period && q.subject) keys.push(`${q.cert}:period:${q.subject}:${q.period}`);
+  return keys;
+}
+
+/**
+ * 考點清單：每個考點的代表題（最新一期的可練題）與其他期的不同問法。
+ * 代表題不存在（例如被停用）的考點略過。依匯入包的順序（考過期數多的在前）。
+ */
+export function pointList(points, questions) {
+  const byId = new Map(questions.map(q => [q.id, q]));
+  const out = [];
+  for (const p of points || []) {
+    const qs = p.ids.map(i => byId.get(i)).filter(Boolean);
+    const active = qs.filter(isActive).sort((a, b) => (b.period || 0) - (a.period || 0));
+    if (!active.length) continue;
+    const rep = active[0];
+    const seen = new Set([rep.stem + '|' + rep.options.join('|')]);
+    const variants = [];
+    for (const q of qs.sort((a, b) => (b.period || 0) - (a.period || 0))) {
+      const key = q.stem + '|' + q.options.join('|');
+      if (!seen.has(key)) { seen.add(key); variants.push(q); }
+    }
+    out.push({ id: p.id, periods: [...p.periods].sort((a, b) => a - b), rep, variants, ids: p.ids });
+  }
+  return out;
 }
 
 /**

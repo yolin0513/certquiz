@@ -80,6 +80,47 @@ check('讀書單元：AZ-900 是 證照:節次#細項', L.studyKey({ cert: 'az90
 check('讀書單元：有主題的題目用主題', L.studyKey({ cert: 'bic', topic: '自行查核' }) === 'bic:topic:自行查核');
 check('讀書單元：沒有單元的題目回 null（不記）', L.studyKey({ cert: 'bic', subject: 'law' }) === null);
 
+// 內控讀書模式：考點清單與讀書單元
+{
+  const mk = (id, period, extra = {}) => ({ id, cert: 'bic', subject: 'law', type: 'single', stem: `題幹${id}`, options: ['甲', '乙', '丙', '丁'],
+    answer: 2, source: 'tabf-official', period, ...extra });
+  const base = { format: 'certquiz-import', version: 1, cert: 'bic' };
+  const okPack = { ...base, questions: [mk('bic-law-t47-001', 47, { point: 'P001' }), mk('bic-law-u40-001', 40, { point: 'P001' }), mk('bic-law-t48-002', 48)],
+    points: [{ id: 'P001', periods: [40, 47], ids: ['bic-law-t47-001', 'bic-law-u40-001'] }] };
+  const r1 = L.validateImportPack(okPack, ['bic']);
+  check('匯入檢查：合法的考點清單通過，並回傳考點', r1.ok && r1.points.length === 1, r1.errors.join('；'));
+  const bad = (desc, mut, want) => {
+    const p = JSON.parse(JSON.stringify(okPack)); mut(p);
+    const r = L.validateImportPack(p, ['bic']);
+    check(`匯入檢查：${desc} → 擋`, !r.ok && r.errors.some(e => e.includes(want)), r.errors.join('；'));
+  };
+  bad('考點代號格式不對', p => { p.points[0].id = 'X1'; }, '代號格式不對');
+  bad('考點的題號不在包內', p => { p.points[0].ids[1] = 'bic-law-t99-001'; }, '題號清單不對');
+  bad('考點只有一期', p => { p.points[0].periods = [47]; }, '期別至少要兩期');
+  bad('題目標的考點跟清單不一致', p => { p.questions[1].point = 'P002'; }, '不在考點清單裡');
+  check('匯入檢查：舊版匯入包沒有考點 → 照樣通過、考點為空', (() => { const r = L.validateImportPack({ ...base, questions: [mk('bic-law-t48-002', 48)] }, ['bic']); return r.ok && r.points.length === 0; })());
+  const pl = L.pointList([{ id: 'P001', periods: [47, 40], ids: ['bic-law-u40-001', 'bic-law-t47-001'] }],
+    [mk('bic-law-u40-001', 40, { stem: '舊問法' }), mk('bic-law-t47-001', 47, { stem: '新問法' })]);
+  check('考點清單：代表題是最新一期、其他期不同問法列在 variants、期別由小到大',
+    pl.length === 1 && pl[0].rep.id === 'bic-law-t47-001' && pl[0].variants.length === 1 && pl[0].variants[0].stem === '舊問法' && pl[0].periods.join() === '40,47');
+  check('考點清單：逐字相同的問法不重複列', L.pointList([{ id: 'P001', periods: [40, 47], ids: ['a', 'b'] }],
+    [mk('a', 40, { stem: '同' }), mk('b', 47, { stem: '同' })])[0].variants.length === 0);
+  check('考點清單：題目全被停用的考點略過', L.pointList([{ id: 'P001', periods: [40, 47], ids: ['a', 'b'] }],
+    [mk('a', 40, { status: 'retired' }), mk('b', 47, { status: 'retired' })]).length === 0);
+  check('讀書單元：內控題＝所屬考點＋科目期別頁', L.studyKeys(mk('bic-law-t47-001', 47, { point: 'P001' })).join() === 'bic:point:P001,bic:period:law:47');
+  check('讀書單元：AZ-900 照舊只有節次#細項', L.studyKeys({ cert: 'az900', objective: 'B.3', skill: 2 }).join() === 'az900:B.3#2');
+  const pool = [mk('bic-law-t47-001', 47), mk('bic-law-u40-001', 40), mk('bic-law-t48-002', 48)];
+  check('選題：限定題號', L.pickQuestions(pool, { count: 10, ids: new Set(['bic-law-u40-001']), seed: 1 }).map(x => x.id).join() === 'bic-law-u40-001');
+  check('選題：限定期別', L.pickQuestions(pool, { count: 10, period: '48', seed: 1 }).map(x => x.id).join() === 'bic-law-t48-002');
+  const realPack = join(dirname(fileURLToPath(import.meta.url)), '..', 'data', 'local', 'import', 'bic-匯入包.json');
+  if (existsSync(realPack)) {
+    const rp = JSON.parse(readFileSync(realPack, 'utf-8'));
+    const rr = L.validateImportPack(rp, ['bic', 'az900']);
+    const rl = L.pointList(rr.points, rr.questions);
+    check(`真的匯入包：考點 ${rr.points.length} 個全部通過檢查、每個考點都有可練的代表題`, rr.ok && rr.points.length > 0 && rl.length === rr.points.length, rr.errors.slice(0, 3).join('；'));
+  }
+}
+
 // 讀書模式：依官方大綱分組
 {
   const syl = { objectives: [{ id: 'A.1', name: 'n1', domain: 'D', skills: ['s1', 's2'] }, { id: 'B.1', name: 'n2', domain: 'E', skills: ['t1'] }] };

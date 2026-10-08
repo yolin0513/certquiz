@@ -81,8 +81,8 @@ async function homeView(gen) {
         h('p', { class: 'stat' }, `可練 ${active.length} 題`, questions.length !== active.length ? `（另有重複題 ${questions.length - active.length} 題已隱藏）` : ''),
         h('p', { class: 'stat' }, `已作答 ${s.answered} 次，答對率 ${s.answered ? pct(s.rate) : '—'}，錯題 ${mistakes.length} 題`),
         h('div', { class: 'row' },
-          c.syllabus ? h('a', { class: 'btn primary', href: `#/study?cert=${c.id}`, text: '讀書（依官方大綱）' }) : null,
-          h('a', { class: c.syllabus ? 'btn' : 'btn primary', href: `#/setup?cert=${c.id}`, text: '開始練習' }),
+          h('a', { class: 'btn primary', href: `#/study?cert=${c.id}`, text: c.syllabus ? '讀書（依官方大綱）' : '讀書（反覆考點與歷屆題目）' }),
+          h('a', { class: 'btn', href: `#/setup?cert=${c.id}`, text: '開始練習' }),
           h('a', { class: 'btn', href: `#/practice?cert=${c.id}&mode=mistakes&count=20`, 'aria-disabled': mistakes.length ? null : 'true', text: `錯題複習（${mistakes.length}）` })),
         h('div', { class: 'row' },
           c.subjects.filter(s => s.exam).map(s => h('a', { class: 'btn', href: `#/exam?cert=${c.id}&subject=${s.id}`,
@@ -129,7 +129,8 @@ async function practiceView(gen, q) {
     const prog = new Map((await DB.getAll('progress', certId)).map(p => [p.qid, p]));
     picked = L.pickQuestions(questions, { subject: q.get('subject') || 'all', source: q.get('source') || 'all',
       count: Number(q.get('count')) || 10, order: q.get('order') || 'unseen',
-      objective: q.get('objective') || '', skill: q.get('skill') || '' }, prog);
+      objective: q.get('objective') || '', skill: q.get('skill') || '', period: q.get('period') || '',
+      ids: q.get('set') === 'points' ? new Set(L.pointList(await DB.getMeta(`points:${certId}`, []), questions).map(x => x.rep.id)) : null }, prog);
   }
   if (!picked.length) {
     render(gen, h('a', { class: 'back', href: '#/', text: '← 回首頁' }),
@@ -310,8 +311,15 @@ async function examView(gen, q) {
 // ---------------------------------------------------------------- 讀書模式
 /** 作答前是否讀過這題所屬的讀書單元；題目沒有讀書單元時回 undefined（不記） */
 function studiedBefore(map, q) {
-  const key = L.studyKey(q);
-  return key ? Boolean(map[key]) : undefined;
+  const keys = L.studyKeys(q);
+  return keys.length ? keys.some(k => Boolean(map[k])) : undefined;
+}
+
+async function markStudied(keys) {
+  const map = await DB.getMeta('studied', {});
+  const now = Date.now();
+  for (const k of keys) map[k] = { first: map[k]?.first ?? now, last: now };
+  await DB.setMeta('studied', map);
 }
 
 // 先讀再練：依官方大綱（節次 → 細項）列出題目、正解、解析與依據，不必作答。
@@ -320,7 +328,7 @@ async function studyView(gen, q) {
   const { cert, questions } = await loadPool(certId);
   const back = h('a', { class: 'back', href: '#/', text: '← 回首頁' });
   if (!cert.syllabus) {
-    render(gen, back, h('section', { class: 'card' }, h('p', { text: '這張證照的讀書模式還在準備中。' })));
+    await importStudyView(gen, q, cert, questions);
     return;
   }
   const g = L.studyGroups(cert.syllabus, questions);
@@ -348,12 +356,7 @@ async function studyView(gen, q) {
 
   // 一個細項：逐題列出；記下「讀過這個單元」（第一次與最近一次的時間），作答時用來標示「作答前是否讀過」
   const key = L.studyKey(skill.questions[0]);
-  if (key) {
-    const map = await DB.getMeta('studied', {});
-    const now = Date.now();
-    map[key] = { first: map[key]?.first ?? now, last: now };
-    await DB.setMeta('studied', map);
-  }
+  if (key) await markStudied([key]);
   const all = g.objectives.flatMap(o => o.skills.filter(k => k.questions.length).map(k => ({ o, k })));
   const at = all.findIndex(x => x.o.id === obj.id && x.k.n === skill.n);
   const link = x => x && h('a', { class: 'btn', href: `#/study?cert=${certId}&objective=${x.o.id}&skill=${x.k.n}`,
@@ -378,6 +381,84 @@ async function studyView(gen, q) {
         h('a', { class: 'btn primary', href: `#/practice?cert=${certId}&mode=practice&objective=${obj.id}&skill=${skill.n}&count=${n}&order=unseen`,
           text: `讀完了，練這 ${n} 題` })),
       h('div', { class: 'row' }, link(all[at - 1]), link(all[at + 1]))));
+}
+
+// 內控（匯入的官方題）讀書模式：反覆考點清單＋依科目與期別瀏覽。
+// 沒有官方解析，所以這裡只有題目與官方正解，不寫任何自己的說明（docs/K）。
+async function importStudyView(gen, q, cert, questions) {
+  const certId = cert.id;
+  const view = q.get('view') === 'browse' ? 'browse' : 'points';
+  const tabs = h('div', { class: 'row' },
+    h('a', { class: view === 'points' ? 'btn primary' : 'btn', href: `#/study?cert=${certId}`, text: '反覆考點' }),
+    h('a', { class: view === 'browse' ? 'btn primary' : 'btn', href: `#/study?cert=${certId}&view=browse`, text: '依科目與期別瀏覽' }));
+  const active = questions.filter(L.isActive);
+  const subjName = new Map(cert.subjects.map(s => [s.id, s.name.replace(/^銀行內部控制與內部稽核/, '') || s.name]));
+  const optsList = x => h('ol', { class: 'study-opts' }, x.options.map((t, k) => h('li', { class: k + 1 === x.answer ? 'right' : null },
+    h('span', { text: t }), k + 1 === x.answer ? h('b', { text: '（正解）' }) : null)));
+  const home = h('a', { class: 'back', href: '#/', text: '← 回首頁' });
+  if (!active.length) {
+    render(gen, home, h('section', { class: 'card' },
+      h('p', { text: '還沒有題目。這張證照的題目要從「設定 → 匯入題目」放進來。' }), h('a', { class: 'btn', href: '#/settings', text: '去匯入題目' })));
+    return;
+  }
+
+  if (view === 'points') {
+    const list = L.pointList(await DB.getMeta(`points:${certId}`, []), questions);
+    const covered = list.reduce((t, x) => t + x.ids.length, 0);
+    const notice = () => h('section', { class: 'card warn' },
+      h('h3', { text: '這不是考試範圍——只列出「證明得了」的反覆考點' }),
+      h('p', { text: '這裡只放不同期之間，題幹與正解逐字相同、或高度相似的題目。改寫幅度較大的同一個考點，程式比對不出來，會被漏掉。' }),
+      h('p', { text: '所以：沒出現在這份清單上，不代表那個考點不常考。這份清單是「先讀哪些」的參考，不是全部要讀的範圍；其餘題目請用「依科目與期別瀏覽」讀。' }),
+      h('p', { class: 'muted', text: '題目沒有官方解析，這裡只列題目與官方答案卷的正解。' }));
+    if (!list.length) {
+      render(gen, home, tabs, notice(),
+        h('section', { class: 'card' }, h('p', { text: '這份匯入包沒有考點資料。請用新版的匯入包重新匯入（設定 → 匯入題目）。' })));
+      return;
+    }
+    await markStudied(list.map(x => `${certId}:point:${x.id}`));
+    render(gen, home, tabs, notice(),
+      h('section', { class: 'card' },
+        h('h2', { text: `${cert.short}：反覆考點 ${list.length} 個` }),
+        h('p', { class: 'muted', text: `涵蓋 ${covered} 題次；可練的題目一共 ${active.length} 題。依考過的期數排序，考過越多期的排越前面。` }),
+        h('div', { class: 'row' }, h('a', { class: 'btn primary', href: `#/practice?cert=${certId}&mode=practice&set=points&count=${list.length}&order=unseen`,
+          text: `讀完了，練這 ${list.length} 個考點（各一題）` }))),
+      list.map((x, i) => h('section', { class: 'card study-q' },
+        h('p', { class: 'muted', text: `${i + 1}／${list.length}・考過 ${x.periods.length} 期：第 ${x.periods.join('、')} 期・${subjName.get(x.rep.subject) || ''}` }),
+        h('p', { class: 'stem', text: x.rep.stem }),
+        optsList(x.rep),
+        h('p', { class: 'src', text: L.sourceLabel(x.rep) }),
+        x.variants.length ? h('details', {}, h('summary', { text: `其他期的問法（${x.variants.length}）` }),
+          x.variants.map(v => h('div', { class: 'variant' }, h('p', { class: 'stem', text: v.stem }),
+            h('p', { class: 'muted', text: `正解：(${v.answer}) ${v.options[v.answer - 1]}` }), h('p', { class: 'src', text: L.sourceLabel(v) })))) : null)),
+      notice());
+    return;
+  }
+
+  // 依科目與期別瀏覽
+  const subject = q.get('subject');
+  const period = q.get('period');
+  if (!subject || !period) {
+    const groups = cert.subjects.map(s => {
+      const periods = [...new Set(active.filter(x => x.subject === s.id && x.period).map(x => x.period))].sort((a, b) => b - a);
+      return h('section', { class: 'card' }, h('h3', { text: subjName.get(s.id) }),
+        h('div', { class: 'row' }, periods.map(pd => h('a', { class: 'btn', href: `#/study?cert=${certId}&view=browse&subject=${s.id}&period=${pd}`,
+          text: `第 ${pd} 期（${active.filter(x => x.subject === s.id && x.period === pd).length} 題）` }))));
+    });
+    render(gen, home, tabs,
+      h('section', { class: 'card' }, h('p', { class: 'muted', text: '逐期瀏覽題目與官方正解。重複出現的題目只列在最新的那一期。' })), groups);
+    return;
+  }
+  const list = active.filter(x => x.subject === subject && String(x.period) === String(period)).sort((a, b) => (a.qno || 0) - (b.qno || 0));
+  await markStudied([`${certId}:period:${subject}:${period}`]);
+  render(gen, h('a', { class: 'back', href: `#/study?cert=${certId}&view=browse`, text: '← 回期別清單' }), tabs,
+    h('section', { class: 'card' }, h('h2', { text: `${subjName.get(subject) || subject}・第 ${period} 期（${list.length} 題）` }),
+      h('div', { class: 'row' }, h('a', { class: 'btn primary', href: `#/practice?cert=${certId}&mode=practice&subject=${subject}&period=${period}&count=${list.length}&order=unseen`,
+        text: `讀完了，練這 ${list.length} 題` }))),
+    list.map((x, i) => h('section', { class: 'card study-q' },
+      h('p', { class: 'muted', text: `${i + 1}／${list.length}` }),
+      h('p', { class: 'stem', text: x.stem }),
+      optsList(x),
+      h('p', { class: 'src', text: L.sourceLabel(x) }))));
 }
 
 // ---------------------------------------------------------------- 統計
@@ -437,6 +518,7 @@ async function settingsView(gen) {
     const confirmBtn = h('button', { class: 'btn primary', type: 'button', text: '確定匯入', onclick: async () => {
       confirmBtn.disabled = true;
       const res = await DB.replaceUserQuestions(r.cert, r.questions);
+      await DB.setMeta(`points:${r.cert}`, r.points || []);   // 考點清單跟著匯入包走；舊版匯入包沒有考點就清成空的
       fill(status, h('p', { class: 'ok', text: `匯入完成：${cert.short} ${res.added} 題（可練 ${active} 題）。原本的 ${res.removed} 題已換成這一份；作答紀錄保留。` }),
         h('a', { class: 'btn', href: '#/', text: '回首頁開始練習' }));
     } });

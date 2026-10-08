@@ -42,12 +42,26 @@ GOOD_AZ = block("az900-a-o-0001", "az900.all", "Which is a benefit of cloud?", [
 GOOD_AZ_DRAFT = GOOD_AZ.replace("explain: ", f"basis_quote: {QUOTE}\nexplain: ")
 GOOD_BIC_47 = block("bic-law-t47-001", "bic.law", "同一題", ["甲", "乙", "丙", "丁"], 2, "tabf-official", period=47, law_as_of="2025-03-17")
 GOOD_BIC_40 = block("bic-law-u40-007", "bic.law", "同一題", ["甲", "乙", "丙", "丁"], 2, "user-import", period=40, law_as_of="2021-11-22")
+# 考點清單用：兩組第二級（跨期相似）群組，一組核對保留、一組核對拆開
+BIC_MORE = "".join(block(i, "bic.law", f"題{i}", ["甲", "乙", "丙", "丁"], 1, "tabf-official", period=int(i[9:11]), law_as_of="2025-03-17")
+                   for i in ("bic-law-t48-003", "bic-law-t49-002", "bic-law-t46-005", "bic-law-t48-006"))
+POINTS = {"points": [{"level": "1", "ids": ["bic-law-u40-007", "bic-law-t47-001"], "periods": ["40", "47"]},
+                     {"level": "2", "ids": ["bic-law-t48-003", "bic-law-t49-002"], "periods": ["48", "49"]},
+                     {"level": "2", "ids": ["bic-law-t46-005", "bic-law-t48-006"], "periods": ["46", "48"]}]}
+REVIEW = {"groups": [{"ids": ["bic-law-t48-003", "bic-law-t49-002"], "verdict": "保留"},
+                     {"ids": ["bic-law-t46-005", "bic-law-t48-006"], "verdict": "拆開"}]}
+POINT_FILES = {"bic/a.txt": GOOD_BIC_40, "bic/b.txt": GOOD_BIC_47, "bic/c.txt": BIC_MORE}
 
 
-def run_case(desc, public_files, local_files, mode, expect_ok, expect_ids=(), check=None):
+def run_case(desc, public_files, local_files, mode, expect_ok, expect_ids=(), check=None, study=None):
     tmp = Path(tempfile.mkdtemp(prefix="certquiz-build-"))
-    saved = (B.SRC, B.OUT, B.LOCAL_SRC, B.LOCAL_OUT)
+    saved = (B.SRC, B.OUT, B.LOCAL_SRC, B.LOCAL_OUT, B.STUDY_DIR)
     try:
+        # 考點檔也要指到暫存目錄：不然測試會讀到真正的 data/local/study/points.json
+        (tmp / "study").mkdir()
+        for name, obj in (study or {}).items():
+            (tmp / "study" / name).write_text(json.dumps(obj, ensure_ascii=False), encoding="utf-8")
+        B.STUDY_DIR = tmp / "study"
         (tmp / "src").mkdir()
         (tmp / "src" / "certs.json").write_text(REAL_CERTS, encoding="utf-8")
         for rel, text in public_files.items():
@@ -74,7 +88,7 @@ def run_case(desc, public_files, local_files, mode, expect_ok, expect_ids=(), ch
                 print(f"    {e}")
         return ok
     finally:
-        B.SRC, B.OUT, B.LOCAL_SRC, B.LOCAL_OUT = saved
+        B.SRC, B.OUT, B.LOCAL_SRC, B.LOCAL_OUT, B.STUDY_DIR = saved
         shutil.rmtree(tmp, ignore_errors=False)
 
 
@@ -83,6 +97,17 @@ def dedup_check(tmp):
     by = {q["id"]: q for q in pack["questions"]}
     return (by["bic-law-u40-007"].get("dupOf") == "bic-law-t47-001" and "dupOf" not in by["bic-law-t47-001"]
             and pack["counts"]["active"] == 1 and pack["counts"]["total"] == 2)
+
+
+def points_check(tmp):
+    pack = json.loads((tmp / "lout" / "bic-匯入包.json").read_text(encoding="utf-8"))
+    by = {q["id"]: q for q in pack["questions"]}
+    pts = pack.get("points")
+    return (pts == [{"id": "P001", "level": "2", "periods": [48, 49], "ids": ["bic-law-t48-003", "bic-law-t49-002"]},
+                    {"id": "P002", "level": "1", "periods": [40, 47], "ids": ["bic-law-u40-007", "bic-law-t47-001"]}]
+            and pack["counts"]["points"] == 2
+            and by["bic-law-t49-002"].get("point") == "P001" and by["bic-law-t47-001"].get("point") == "P002"
+            and "point" not in by["bic-law-t46-005"] and "point" not in by["bic-law-t48-006"])
 
 
 def draft_dir_cases():
@@ -135,6 +160,11 @@ def main():
         ("解析的「選項 N」只點錯誤選項 → 通過", {"az900/a.txt": GOOD_AZ.replace("explain: 解析。", "explain: 解析（選項 2、3 錯）。")}, {}, "public", True),
         ("AZ-900 缺 skill → 擋、點名", {"az900/a.txt": GOOD_AZ.replace("skill: 1\n", "")}, {}, "public", False, ["az900-a-o-0001"]),
         ("一題有錯、其他題都對 → 一個檔都不寫", {"az900/a.txt": GOOD_AZ, "az900/b.txt": GOOD_AZ.replace("az900-a-o-0001", "az900-a-o-0002").replace("answer: 1", "answer: 9")}, {}, "public", False, ["az900-a-o-0002"]),
+        ("考點清單：第一級直接收、第二級只收核對「保留」的；依期數再依最近一期排序編號；題目標上考點代號",
+         {}, POINT_FILES, "local", True, (), points_check, {"points.json": POINTS, "points-review.json": REVIEW}),
+        ("考點清單：有考點檔、沒有人工核對紀錄 → 擋", {}, POINT_FILES, "local", False, ["points-review.json"], None, {"points.json": POINTS}),
+        ("考點清單：群組裡的題號對不到題目 → 擋、點名", {}, {"bic/a.txt": GOOD_BIC_40, "bic/b.txt": GOOD_BIC_47}, "local", False, ["bic-law-t48-003"], None,
+         {"points.json": POINTS, "points-review.json": REVIEW}),
     ]
     fails = sum(0 if run_case(*c) else 1 for c in cases)
     fails += 0 if draft_dir_cases() else 1

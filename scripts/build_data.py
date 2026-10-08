@@ -307,6 +307,44 @@ def build_public(certs, check_only):
     return f"公開題庫：{len(files)} 個原始檔｜{summary}｜dataVersion {digest}", []
 
 
+STUDY_DIR = ROOT / "data" / "local" / "study"
+
+
+def attach_points(cid, items, pack):
+    """考點清單（docs/K 第 3 點）：把核對過的考點群組放進本機匯入包，每題標上所屬考點代號。
+    來源：data/local/study/points.json（scripts/study_points.py 產生）＋ points-review.json（人工核對，第二級逐組）。
+    只放核對結果為「保留」的群組；第一級（逐字重複）不需人工核對。沒有這兩個檔就不放（匯入包照樣建）。回傳錯誤清單。"""
+    pf, rf = STUDY_DIR / "points.json", STUDY_DIR / "points-review.json"
+    if cid != "bic" or not pf.exists():
+        return []
+    if not rf.exists():
+        return [f"{pf.name} 存在但沒有人工核對紀錄 {rf.name}——第二級考點群組未經核對，不放進匯入包"]
+    points = json.loads(pf.read_text(encoding="utf-8"))["points"]
+    review = {tuple(g["ids"]): g["verdict"] for g in json.loads(rf.read_text(encoding="utf-8"))["groups"]}
+    by_id = {q["id"]: q for q in items}
+    errs, kept = [], []
+    for p in points:
+        if "2" in p["level"] and review.get(tuple(p["ids"])) != "保留":
+            continue
+        missing = [i for i in p["ids"] if i not in by_id]
+        if missing:
+            errs.append(f"考點群組的題號對不到題目：{missing[:3]}（重新跑 scripts/study_points.py）")
+            continue
+        kept.append(p)
+    if errs:
+        return errs
+    kept.sort(key=lambda p: (-len(p["periods"]), -max(int(x) for x in p["periods"]), p["ids"][0]))
+    out = []
+    for n, p in enumerate(kept, 1):
+        code = f"P{n:03d}"
+        for i in p["ids"]:
+            by_id[i]["point"] = code
+        out.append({"id": code, "level": p["level"], "periods": [int(x) for x in p["periods"]], "ids": p["ids"]})
+    pack["points"] = out
+    pack["counts"]["points"] = len(out)
+    return []
+
+
 def build_local(certs, check_only):
     cert_ids = {c["id"] for c in certs}
     files, qs, errs = collect(LOCAL_SRC, cert_ids, "local")
@@ -327,6 +365,9 @@ def build_local(certs, check_only):
             "notice": "本機自用：題目來自使用者自行取得的官方歷屆試題 PDF。不得上傳、不得散布。",
             "questions": items,
         }
+        perr = attach_points(cid, items, pack)
+        if perr:
+            return None, perr
         name = next(c["short"] for c in certs if c["id"] == cid)
         pending[LOCAL_OUT / f"{cid}-匯入包.json"] = dump(pack)
         parts.append(f"{name} 全部 {len(items)} 題、去重後可練 {active} 題（重複 {n_groups} 組、隱藏 {n_marked} 題）")

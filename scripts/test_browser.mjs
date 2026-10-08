@@ -257,8 +257,8 @@ async function realTest(browser, base, mon) {
   check('IndexedDB：作答 10 筆、每題彙總 10 筆（或同題合併）', st.attempts === 10 && st.progress >= 1 && st.progress <= 10, JSON.stringify(st));
   check('IndexedDB：錯題本筆數＝這一輪答錯的題數', st.mistakes === st.wrong, JSON.stringify(st));
   const bicStudied = await page.evaluate(() => new Promise(r => { const q = indexedDB.open('certquiz'); q.onsuccess = () => {
-    const g = q.result.transaction('attempts').objectStore('attempts').getAll(); g.onsuccess = () => r(g.result.filter(x => 'studied' in x).length); }; }));
-  check('內控題（還沒有讀書單元）：作答紀錄不記 studied 欄位', bicStudied === 0, `${bicStudied} 筆有 studied`);
+    const g = q.result.transaction('attempts').objectStore('attempts').getAll(); g.onsuccess = () => r(g.result.map(x => x.studied)); }; }));
+  check('內控題（還沒讀過任何讀書頁就練）：作答紀錄都標 studied=false', bicStudied.length === 10 && bicStudied.every(v => v === false), JSON.stringify(bicStudied));
   check(`IndexedDB：匯入的題目 ${pack.counts.total} 題都在`, st.user === pack.counts.total, JSON.stringify(st));
   check('重複題（dupOf）沒有被出題', st.dupAnswered === 0, JSON.stringify(st));
 
@@ -672,6 +672,68 @@ async function studyTest(browser, base) {
   }
 }
 
+// ---------------------------------------------------------------- 二之七、內控讀書模式：反覆考點＋依期別瀏覽
+async function importStudyTest(browser, base) {
+  console.log('== 二之七、內控讀書模式：反覆考點清單（附「不是考試範圍」警示）＋依科目與期別瀏覽');
+  const pack = JSON.parse(readFileSync(PACK, 'utf-8'));
+  const byId = new Map(pack.questions.map(x => [x.id, x]));
+  const ctx = await browser.createBrowserContext();
+  const errors = [];
+  try {
+    const page = await newPage(ctx, errors);
+    await page.goto(base);
+    await waitText(page, '證照題庫練習');
+    await importPack(page, PACK, pack.counts.active);
+    await page.goto(base + '#/');
+    await waitText(page, '讀書（反覆考點與歷屆題目）');
+    await (await page.$('a::-p-text(讀書（反覆考點與歷屆題目）)')).click();
+    await waitText(page, '反覆考點');
+    await page.waitForSelector('.study-q');
+    const warn = await page.$$eval('.card.warn', cs => cs.map(c => c.innerText));
+    check('反覆考點頁：上下各一張警示卡，寫明「不是考試範圍」「沒出現在清單上不代表不常考」',
+      warn.length === 2 && warn.every(t => t.includes('不是考試範圍') && t.includes('沒出現在這份清單上，不代表那個考點不常考')), JSON.stringify(warn).slice(0, 200));
+    const cards = await page.$$eval('.study-q', cs => cs.map(c => ({
+      head: c.querySelector('.muted').textContent, stem: c.querySelector('.stem').textContent,
+      right: [...c.querySelectorAll(':scope > .study-opts li.right')].map(li => li.textContent) })));
+    const bad = [];
+    pack.points.forEach((p, i) => {
+      const c = cards[i];
+      const reps = p.ids.map(x => byId.get(x)).filter(x => !x.dupOf && x.status !== 'retired').sort((a, b) => b.period - a.period);
+      const rep = reps[0];
+      if (!c) { bad.push(`${p.id}：沒有卡片`); return; }
+      if (c.stem !== rep.stem) bad.push(`${p.id}：代表題不是最新一期`);
+      if (c.right.length !== 1 || c.right[0] !== rep.options[rep.answer - 1] + '（正解）') bad.push(`${p.id}：正解標示 ${JSON.stringify(c.right)}`);
+      if (!c.head.includes(`考過 ${p.periods.length} 期`)) bad.push(`${p.id}：期數標示 ${c.head}`);
+    });
+    check(`反覆考點頁：${cards.length} 張卡＝匯入包 ${pack.points.length} 個考點；代表題是最新一期、只標一個正解且與答案卷一致、期數正確`,
+      cards.length === pack.points.length && bad.length === 0, bad.slice(0, 5).join('；'));
+    // 依科目與期別瀏覽：法規第 47 期
+    const want = pack.questions.filter(x => !x.dupOf && x.subject === 'law' && x.period === 47);
+    await page.goto(base + '#/study?cert=bic&view=browse');
+    await waitText(page, '依科目與期別瀏覽');
+    await page.goto(base + '#/study?cert=bic&view=browse&subject=law&period=47');
+    await page.waitForSelector('.study-q');
+    const bcards = await page.$$eval('.study-q', cs => cs.map(c => [...c.querySelectorAll('.study-opts li.right')].length));
+    check(`依期別瀏覽：法規第 47 期 ${bcards.length} 題＝匯入包可練的 ${want.length} 題，每題只標一個正解`,
+      bcards.length === want.length && bcards.every(n => n === 1));
+    // 讀過這一期再練：作答紀錄標 studied=true
+    await (await page.waitForSelector('a.btn.primary::-p-text(讀完了，練這)')).click();
+    for (let n = 0; n < 2; n++) {
+      await page.waitForSelector('.opt:not([disabled])');
+      await page.click('.opt[data-k="1"]');
+      await page.waitForSelector('.feedback:not([hidden])');
+      await page.click('.q .btn.primary');
+    }
+    const at = await page.evaluate(() => new Promise(r => { const q = indexedDB.open('certquiz'); q.onsuccess = () => {
+      const g = q.result.transaction('attempts').objectStore('attempts').getAll(); g.onsuccess = () => r(g.result); }; }));
+    check('讀過這一期再練：這 2 筆作答紀錄都標 studied=true、題目都屬於法規第 47 期',
+      at.length === 2 && at.every(x => x.studied === true && byId.get(x.qid).subject === 'law' && byId.get(x.qid).period === 47), JSON.stringify(at.map(x => [x.qid, x.studied])));
+    check('內控讀書模式：沒有頁面錯誤', errors.length === 0, errors.join('；'));
+  } finally {
+    await ctx.close();
+  }
+}
+
 // ---------------------------------------------------------------- 二之三、題庫檔讀不到
 // 某張證照的題庫檔讀不到時，只有那一張卡片顯示錯誤，首頁其他部分照常（2026-10-08 之前會整頁掛掉）
 async function missingBankTest(browser) {
@@ -826,6 +888,7 @@ async function main() {
     await swInstallTest(browser);
     await minimalTest(browser, base);
     await studyTest(browser, base);
+    await importStudyTest(browser, base);
     await missingBankTest(browser);
     check(`全畫面掃描：整個測試期間所有頁面都沒有出現 null／undefined／NaN`, BAD_TEXT.length === 0,
       BAD_TEXT.slice(0, 8).map(x => `「${x.t}」@${x.where}`).join('；'));
