@@ -16,6 +16,13 @@
 理由：「直接截命令輸出的最後一行」比「先存檔再讀」順手，這個專案因此兩次查不到失敗的是哪一項；
 讓結論只存在檔案裡，讀的人就非得打開檔案不可，這條教訓不必再靠記得。
 每一次 HTTP 存取都記下時間、狀態碼、回應大小、耗時（連線錯誤也記）——偶發失敗時留下證據，不再只能「重跑、重現不出來」。
+
+**5xx 重試（Dispatch 2026-10-08 准做，範圍限死）**：
+  - 只對 HTTP 5xx 重試；4xx、內容不符、逾時、連線錯誤一律不重試。
+  - 最多 1 次（間隔 RETRY_WAIT 秒），重試仍失敗就照常判不符。
+  - 記錄檔記下「首次 5xx、重試結果」，總結行註明本次重試了幾個檔。
+  - 重試次數是訊號，不是雜訊：本次重試超過 MAX_RETRY_FILES 個檔、或連續 CONSEC_RUNS 次執行都有重試，就判紅，並寫明「線上不穩，不是內容不符」。
+    跨次的紀錄存在 data/local/logs/verify-live-retries.tsv。
 """
 import json
 import re
@@ -40,6 +47,13 @@ sys.path.insert(0, str(ROOT / "scripts"))
 import selfcheck as S  # noqa: E402
 
 LOGDIR = ROOT / "data" / "local" / "logs"
+# 每次執行一列：時間、HEAD、重試的檔數。測試要用環境變數改到暫存檔——測試的「0 次重試」寫進真的紀錄，會把連續重試的訊號打斷
+import os  # noqa: E402
+HISTORY = Path(os.environ.get("VERIFY_LIVE_HISTORY") or LOGDIR / "verify-live-retries.tsv")
+RETRY_WAIT = 2.0
+MAX_RETRY_FILES = 3    # 單次執行重試超過這麼多個檔＝線上不穩
+CONSEC_RUNS = 3        # 連續這麼多次執行都有重試＝線上不穩
+RETRIES = []           # 本次的重試：{url, first, second}
 fails = 0
 failed = []   # 不符的檢查名稱：總結行直接列出（2026-10-08 一次「1 項不符」因為只截了最後一行而查不到是哪一項）
 
@@ -59,11 +73,34 @@ def check(desc, ok, detail=""):
 
 
 def fetch(url):
-    """回傳 (HTTP 狀態, 內容 bytes)。加時間參數避開 CDN 快取。"""
+    """回傳 (HTTP 狀態, 內容 bytes)。加時間參數避開 CDN 快取。只有 5xx 會重試一次（見檔頭）。"""
     # 檔名有中文（docs/A_範圍評估.md 等）：網址要先編碼（2026-10-08 第一次線上驗證時當在這裡）
     url = urllib.parse.quote(url, safe=":/?&=%#")
+    st, body = _fetch_once(url, "")
+    if st is not None and 500 <= st <= 599:
+        out(f"  ↻ 首次 HTTP {st}，{RETRY_WAIT:g} 秒後重試一次（只對 5xx）")
+        time.sleep(RETRY_WAIT)
+        st2, body = _fetch_once(url, "（重試）")
+        RETRIES.append({"url": urllib.parse.unquote(url), "first": st, "second": st2})
+        out(f"  ↻ 重試結果：HTTP {st2}{'（成功）' if st2 is not None and 200 <= st2 < 300 else '（仍失敗，照常判不符）'}")
+        st = st2
+    return st, body
+
+
+def stable(n_retry_files):
+    """單次執行的門檻：重試的檔數不超過 MAX_RETRY_FILES。"""
+    return n_retry_files <= MAX_RETRY_FILES
+
+
+def consecutive(history_counts):
+    """跨次的門檻：最近 CONSEC_RUNS 次（含本次）都有重試＝不穩。history_counts 由舊到新。"""
+    last = history_counts[-CONSEC_RUNS:]
+    return not (len(last) == CONSEC_RUNS and all(n > 0 for n in last))
+
+
+def _fetch_once(url, tag):
     sep = "&" if "?" in url else "?"
-    req = urllib.request.Request(f"{url}{sep}v={int(time.time())}", headers={"User-Agent": "certquiz-verify", "Cache-Control": "no-cache"})
+    req = urllib.request.Request(f"{url}{sep}v={int(time.time() * 1000)}", headers={"User-Agent": "certquiz-verify", "Cache-Control": "no-cache"})
     t0 = time.time()
     st, body, err = None, b"", ""
     try:
@@ -73,7 +110,7 @@ def fetch(url):
         st = e.code
     except Exception as e:   # 連線錯誤、逾時：記下來、當成失敗回傳，不讓整支程式炸掉而什麼都沒留下
         err = f"{type(e).__name__}: {e}"
-    out(f"· HTTP {st if st is not None else '—'} {len(body)}B {int((time.time() - t0) * 1000)}ms {urllib.parse.unquote(url)}{('｜' + err) if err else ''}")
+    out(f"· HTTP {st if st is not None else '—'} {len(body)}B {int((time.time() - t0) * 1000)}ms {urllib.parse.unquote(url)}{tag}{('｜' + err) if err else ''}")
     return st, body
 
 
@@ -174,7 +211,20 @@ def run():
     except (ValueError, KeyError, StopIteration) as e:
         check("V5 線上 manifest 讀得到", False, f"HTTP {st}：{e}")
 
-    out("VERIFY-LIVE OK：全部符合" if not fails else f"VERIFY-LIVE FAILED：{fails} 項不符（{'｜'.join(failed)}）")
+    # ---- V0 線上穩定性：重試次數是訊號
+    n = len({r["url"] for r in RETRIES})
+    check(f"V0 線上穩定性：本次 5xx 重試 {n} 個檔（超過 {MAX_RETRY_FILES} 個就算線上不穩）", stable(n),
+          "線上不穩，不是內容不符：" + "、".join(f"{r['url']}（{r['first']}→{r['second']}）" for r in RETRIES[:8]))
+    hist = []
+    if HISTORY.exists():
+        hist = [int(l.split("\t")[2]) for l in HISTORY.read_text(encoding="utf-8").splitlines() if l.count("\t") >= 2 and l.split("\t")[2].isdigit()]
+    with HISTORY.open("a", encoding="utf-8") as f:
+        f.write(f"{datetime.now(timezone.utc).isoformat(timespec='seconds')}\t{head[:8]}\t{n}\n")
+    hist.append(n)
+    check(f"V0 線上穩定性：最近 {CONSEC_RUNS} 次執行不是每次都有重試（最近幾次的重試檔數：{hist[-CONSEC_RUNS:]}）", consecutive(hist),
+          f"線上不穩，不是內容不符：連續 {CONSEC_RUNS} 次執行都有 5xx 重試")
+    note = f"（本次 5xx 重試 {n} 個檔：成功 {sum(1 for r in RETRIES if r['second'] is not None and 200 <= r['second'] < 300)}、仍失敗 {sum(1 for r in RETRIES if not (r['second'] is not None and 200 <= r['second'] < 300))}）" if RETRIES else ""
+    out(("VERIFY-LIVE OK：全部符合" if not fails else f"VERIFY-LIVE FAILED：{fails} 項不符（{'｜'.join(failed)}）") + note)
     return 1 if fails else 0
 
 
