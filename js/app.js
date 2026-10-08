@@ -387,13 +387,14 @@ async function studyView(gen, q) {
       h('div', { class: 'row' }, link(all[at - 1]), link(all[at + 1]))));
 }
 
-// 內控（匯入的官方題）讀書模式：反覆考點清單＋依科目與期別瀏覽。
+// 內控（匯入的官方題）讀書模式：反覆考過的規定＋依科目與期別瀏覽。
+// 一組＝同一條規定在不同期被考過（問法可能不同）；對讀書有用的單位是「規定」，不是「事實」（Dispatch 2026-10-08，docs/K）。
 // 沒有官方解析，所以這裡只有題目與官方正解，不寫任何自己的說明（docs/K）。
 async function importStudyView(gen, q, cert, questions) {
   const certId = cert.id;
   const view = q.get('view') === 'browse' ? 'browse' : 'points';
   const tabs = h('div', { class: 'row' },
-    h('a', { class: view === 'points' ? 'btn primary' : 'btn', href: `#/study?cert=${certId}`, text: '反覆考點' }),
+    h('a', { class: view === 'points' ? 'btn primary' : 'btn', href: `#/study?cert=${certId}`, text: '反覆考過的規定' }),
     h('a', { class: view === 'browse' ? 'btn primary' : 'btn', href: `#/study?cert=${certId}&view=browse`, text: '依科目與期別瀏覽' }));
   const active = questions.filter(L.isActive);
   const subjName = new Map(cert.subjects.map(s => [s.id, s.short || s.name]));
@@ -411,25 +412,27 @@ async function importStudyView(gen, q, cert, questions) {
     const covered = list.reduce((t, x) => t + x.ids.length, 0);
     const n = list.length;
     const notice = () => h('section', { class: 'card warn' },
-      h('h3', { text: '這不是考試範圍——只列出「證明得了」的反覆考點' }),
-      h('p', { text: '這裡只放不同期之間，題幹與正解逐字相同、或高度相似的題目。改寫幅度較大的同一個考點，程式比對不出來，會被漏掉。' }),
-      h('p', { text: '所以：沒出現在這份清單上，不代表那個考點不常考。這份清單是「先讀哪些」的參考，不是全部要讀的範圍；其餘題目請用「依科目與期別瀏覽」讀。' }),
-      h('p', { text: `另外，這 ${n} 個考點是用「相似度」找出來的，量的是「題目寫法重複」，不等於「這條規定重要」：一條規定如果每次換不同問法考，反而不會出現在這份清單上。` }),
+      h('h3', { text: '這不是考試範圍——只列出「證明得了」被反覆考過的規定' }),
+      h('p', {}, h('b', { text: '這份分組正在重新核對中，目前的分法尚未通過驗證。' })),
+      h('p', { text: '一組＝同一條規定在不同期被考過，問法可能不同（正問、反問、換一個數字或條件問）。讀懂那條規定，這一組的題目都會答。' }),
+      h('p', { text: '目前的分組是程式用「題目寫法相似」找出來的：題幹與正解逐字相同或高度相似才會被找到。同一條規定換個寫法再考，程式比對不出來，會被漏掉。' }),
+      h('p', { text: '所以：沒出現在這份清單上，不代表那條規定不常考。這份清單是「先讀哪些」的參考，不是全部要讀的範圍；其餘題目請用「依科目與期別瀏覽」讀。' }),
+      h('p', { text: `也因為是用相似度找的，這 ${n} 組量的是「題目寫法重複」，不等於「這條規定重要」：一條規定如果每次換不同問法考，反而不會出現在這份清單上。` }),
       h('p', { class: 'muted', text: '題目沒有官方解析，這裡只列題目與官方答案卷的正解。' }));
     if (!list.length) {
       render(gen, home, tabs, notice(),
-        h('section', { class: 'card' }, h('p', { text: '這份匯入包沒有考點資料。請用新版的匯入包重新匯入（設定 → 匯入題目）。' })));
+        h('section', { class: 'card' }, h('p', { text: '這份匯入包沒有「反覆考過的規定」資料。請用新版的匯入包重新匯入（設定 → 匯入題目）。' })));
       return;
     }
     await markStudied(list.map(x => `${certId}:point:${x.id}`));
     render(gen, home, tabs, notice(),
       h('section', { class: 'card' },
-        h('h2', { text: `${cert.short}：反覆考點 ${list.length} 個` }),
+        h('h2', { text: `${cert.short}：反覆考過的規定 ${n} 組` }),
         h('p', { class: 'muted', text: `涵蓋 ${covered} 題次；可練的題目一共 ${active.length} 題。依考過的期數排序，考過越多期的排越前面。` }),
         h('div', { class: 'row' }, h('a', { class: 'btn primary', href: `#/practice?cert=${certId}&mode=practice&set=points&count=${list.length}&order=unseen`,
-          text: `讀完了，練這 ${list.length} 個考點（各一題）` }))),
+          text: `讀完了，練這 ${n} 組（各一題）` }))),
       list.map((x, i) => h('section', { class: 'card study-q' },
-        h('p', { class: 'muted', text: `${i + 1}／${list.length}・考過 ${x.periods.length} 期：第 ${x.periods.join('、')} 期・${subjName.get(x.rep.subject) || ''}` }),
+        h('p', { class: 'muted', text: `${i + 1}／${n}・同一條規定考過 ${x.periods.length} 期（問法可能不同）：第 ${x.periods.join('、')} 期・${subjName.get(x.rep.subject) || ''}` }),
         h('p', { class: 'stem', text: x.rep.stem }),
         optsList(x.rep),
         h('p', { class: 'src', text: L.sourceLabel(x.rep) }),

@@ -717,11 +717,11 @@ async function importStudyTest(browser, base) {
     await importPack(page, PACK, pack.counts.active);
     await gotoView(page, base + '#/');
     await (await page.waitForSelector('a.btn[href="#/study?cert=bic"]')).click();
-    await waitText(page, '反覆考點');
+    await waitText(page, '反覆考過的規定');
     await page.waitForSelector('.study-q');
     const warn = await page.$$eval('.card.warn', cs => cs.map(c => c.innerText));
-    check('反覆考點頁：上下各一張警示卡，寫明「不是考試範圍」「沒出現在清單上不代表不常考」「量的是寫法重複、不等於規定重要」',
-      warn.length === 2 && warn.every(t => t.includes('不是考試範圍') && t.includes('沒出現在這份清單上，不代表那個考點不常考') && t.includes(`這 ${pack.points.length} 個考點是用「相似度」找出來的，量的是「題目寫法重複」，不等於「這條規定重要」`)), JSON.stringify(warn).slice(0, 200));
+    check('反覆考點頁：上下各一張警示卡，寫明「尚未通過驗證」「一組＝同一條規定」「不是考試範圍」「沒出現在清單上不代表不常考」「量的是寫法重複、不等於規定重要」',
+      warn.length === 2 && warn.every(t => t.includes('不是考試範圍') && t.includes('這份分組正在重新核對中，目前的分法尚未通過驗證') && t.includes('一組＝同一條規定在不同期被考過，問法可能不同') && t.includes('沒出現在這份清單上，不代表那條規定不常考') && t.includes(`這 ${pack.points.length} 組量的是「題目寫法重複」，不等於「這條規定重要」`)), JSON.stringify(warn).slice(0, 200));
     const cards = await page.$$eval('.study-q', cs => cs.map(c => ({
       head: c.querySelector('.muted').textContent, stem: c.querySelector('.stem').textContent,
       right: [...c.querySelectorAll(':scope > .study-opts li.right')].map(li => li.textContent) })));
@@ -733,7 +733,7 @@ async function importStudyTest(browser, base) {
       if (!c) { bad.push(`${p.id}：沒有卡片`); return; }
       if (c.stem !== rep.stem) bad.push(`${p.id}：代表題不是最新一期`);
       if (c.right.length !== 1 || c.right[0] !== rep.options[rep.answer - 1] + '（正解）') bad.push(`${p.id}：正解標示 ${JSON.stringify(c.right)}`);
-      if (!c.head.includes(`考過 ${p.periods.length} 期`)) bad.push(`${p.id}：期數標示 ${c.head}`);
+      if (!c.head.includes(`同一條規定考過 ${p.periods.length} 期（問法可能不同）`)) bad.push(`${p.id}：期數標示 ${c.head}`);
     });
     check(`反覆考點頁：${cards.length} 張卡＝匯入包 ${pack.points.length} 個考點；代表題是最新一期、只標一個正解且與答案卷一致、期數正確`,
       cards.length === pack.points.length && bad.length === 0, bad.slice(0, 5).join('；'));
