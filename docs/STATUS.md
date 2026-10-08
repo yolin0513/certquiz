@@ -28,7 +28,7 @@
   - **TABF 題庫轉檔** `scripts/import_tabf.py`（入庫、不含題目）：第 47～49 期一般金融，法規 150＋實務 240＝**390 題**，全部通過 C1～C8（題號母體、選項數、答案範圍、兩條獨立答案讀法逐題比對、母體一致、期別組別一致），輸出到 `data/local/src/bic/`（不入庫）。
   - **答案錯位防線的突變證明** `scripts/test_import_tabf.py`：10 個突變（缺號、重號、少選項、題幹混入選項標記、答案超出範圍、單題錯位一格×2、整欄錯位一列、答案少一列、期別不符）全部紅且點名正確題號；另驗「一期好、一期壞時一個檔都不寫」。反向：把檢查器改弱的 4 個突變都讓測試變紅（第 4 個一開始沒抓到，是測試只餵一期壞的，補成一好一壞後才抓到）。
   - **人工抽檢**：`scripts/sample_check.py` 兩份不重疊、分層、可重現的抽樣——Claude 40 題（種子 20261008）、使用者 15 題（種子 51808601，只從其餘 350 題抽）。**Claude 的 40 題：40／40 一致**（Read 工具的另一套抽字引擎＋頁面影像＋答案卷逐題對）。使用者的抽檢單在 `data/local/抽檢/使用者_複核.md`（含題目，不入庫）。
-  - **收件**：使用者提供的 TABF 試卷 PDF 由 `scripts/intake_user_pdf.py` 收進 `refs/user/tabf/`（不入庫），清單 `refs/user/收件清單.tsv`，來源判定 `refs/user/來源判定.tsv`。共 11 份：第 39、40、41 期（法規、一般金融實務、消費金融實務）、第 42 期（法規、一般金融實務），**都沒有答案卷**，所以還不能轉成題目。
+  - **收件**：使用者提供的 TABF 試卷 PDF 由 `scripts/intake_user_pdf.py` 收進 `refs/user/tabf/`（不入庫），清單 `refs/user/收件清單.tsv`，來源判定 `refs/user/來源判定.tsv`。試卷 11 份：第 39、40、41 期（法規、一般金融實務、消費金融實務）、第 42 期（法規、一般金融實務）；答案卷 7 份（見下）。
   - **來源判定（2026-10-08）**：11 份都**推定**為 TABF 官方歷屆試題 PDF，但**無法逐位元組核對**——官網已下架（HEAD 回 404；對照組：現行官方檔 HEAD 回 200 且大小一致）。依據：原始檔名與官網命名一致、PDF 中繼資料與官方同類檔同型、版面頁首頁尾相同、全文無補習班／網址／浮水印字樣。使用者沒有說明出處。
   - **與官網 18 份沒有期別重疊**（使用者 39～42 期；官網 47～49 期），所以無法做「同一期」交叉核對。
   - **答案卷（同日稍晚收到 7 份）**：第 39、40、41 期一般金融與消費金融、第 42 期一般金融。判定同上：中繼資料與官網答案卷同型、80 列且前 50 列三欄、值域 1～4、無第三方字樣；官網同編號已下架（404）。
@@ -40,15 +40,20 @@
   - **C9**：消費金融答案卷的法規欄必須等於一般金融的（兩組共用同一份法規卷——這是先前用 PDF 位元組相同實測過的事實）。第 39～41 期使用者提供的一般與消費答案卷，法規欄逐題一致。
   - **使用者提供那 520 題的人工抽檢（2026-10-08，Dispatch 准、使用者不必再抽）**：`python scripts/sample_check.py --user-batch`，只從沒被跨來源核對涵蓋的 422 題分層抽 20 題（種子 20261009；4 期 × 法規／實務）。**20／20 一致**——Read 工具的另一套抽字引擎＋頁面影像逐題比題幹、四個選項、頁碼，答案逐題對第 39～42 期一般金融答案卷影像。
   - **人工抽檢總計**：官網 390 題抽 40（40／40）＋使用者提供 520 題抽 20（20／20）；另有使用者複核 15 題（官網那批，待回覆）。
-- **M1 還沒做**：題庫建置 `build_data.py`、App 本體（練習引擎、匯入、錯題）、隱私保證（CSP、靜態檢查、瀏覽器網路實測）、推送閘門 `pushsafe.sh`、noindex（寫好、部署時驗）、建遠端 repo 與第一次 push（要先問）。
-- **本機 git**：分支 `main`，作者 GitHub noreply；`core.hooksPath=.githooks`。沒有遠端、沒有 push。
+  - **題庫建置** `scripts/build_data.py`：公開那條（`data/src/` → `data/manifest.json`、`data/q/`）只收原創題，黑名單＋白名單兩層擋 `tabf-official`／`user-import`，AZ-900 只收 `original-*`；本機那條（`--local`）產出 `data/local/import/bic-匯入包.json`（不入庫，約 500 KB，910 題、可練 801 題）。`scripts/test_build_data.py` 12 項；突變：去重方向、有錯也寫檔都會紅；只拿掉黑名單不紅（白名單照樣擋，等價突變），兩層一起拿掉才紅。
+  - **App 本體**：`index.html`（CSP、noindex）、`js/logic.js`（匯入包驗證、選題、錯題規則、出處標示）、`js/db.js`（IndexedDB，交易中途不 await）、`js/data.js`、`js/app.js`（首頁 → 練習設定 → 練習 → 結果；設定 → 匯入題目；題目文字一律 textContent）、`sw.js`、`manifest.webmanifest`、`icons/`。`scripts/test_logic.mjs`（node）23 項含真匯入包；突變 3 個都紅。`node --check` 全部 JS 語法通過。
+  - **隱私三層的前兩層**：①CSP（`default-src`、`connect-src` 只准 `'self'`）；②`scripts/check_privacy.py` 靜態檢查（P1 非 GET／sendBeacon／WebSocket／XMLHttpRequest／EventSource／外部網址，P2 CSP，P3 noindex，P4 外部資源），掛進 pre-commit，`--selftest` 12 項；自我測試抓到檢查器自己的兩個 bug（CSP 引號讀錯、`https://` 被當成註解吃掉）已修；真 repo 實測 commit 帶 sendBeacon 的檔被擋。**第③層（瀏覽器實測網路請求）還沒跑——要先問。**
+  - **推送閘門** `scripts/pushsafe.sh`：鎖定 commit → 工作區要乾淨 → hooksPath 要設 → 四組自我測試 → 歷史掃描 → 隱私檢查 → 建置檢查 → 只推鎖定的 commit → 比對遠端。`scripts/test_pushsafe.py` 在暫存 clone＋假遠端跑 5 個情境（乾淨可推、工作區不乾淨、繞過 hook 的 PDF 歷史、繞過 hook 的 sendBeacon、HEAD 不在 main），**每個擋下都要附指定理由才算數**；全部符合，45 秒。
+  - **noindex**：`index.html` 已加 `<meta name="robots" content="noindex, nofollow">`；**部署後要驗「部署出去的頁面真的帶著它」**（留到部署那一步）。
+- **M1 還沒做**：③瀏覽器實測（要先問，見「等回覆」）；建遠端 repo、第一次 push、開 Pages（要先問）；部署後驗 noindex；匯入步驟在手機上實際走一遍後定稿。
+- **本機 git**：分支 `main`，作者 GitHub noreply；`core.hooksPath=.githooks`。**沒有遠端、沒有 push。**推送一律 `bash scripts/pushsafe.sh`，不直接下 `git push`。
 - **JLPT_App、RentCheck**：只讀，沒有改任何檔。
 
 ## 等使用者回覆
 
 1. **抽檢單**：請照 `data/local/抽檢/使用者_複核.md` 比對 15 題（每題寫了哪份 PDF、第幾頁、第幾題、轉出來的題目與答案）。
-2. **使用者提供那 520 題的人工抽檢**：建議 Claude 依同樣做法分層抽 20 題對照 PDF（另一個種子，不與先前兩份重疊）；跨來源已有 94 組答案一致，所以不再要使用者另外抽。
-3. （到 M1 部署那一步才問）遠端 repo 名稱、第一次 push、開 Pages。
+2. **（Dispatch）准不准跑瀏覽器實測**：預估與內容見回報；用 JLPT_App 已裝好的 puppeteer（只執行、不改它）＋本機靜態伺服器。
+3. **（使用者，部署前）**：遠端 repo 名稱、建 repo、第一次 push、開 Pages——四件都要先問。
 
 ## 題庫母體與口徑（2026-10-08）
 
@@ -122,4 +127,6 @@
 - **`pdftotext -table` 讀答案卷會整欄錯位一列**（表頭那列吃到第 1 題的答案）——答案錯位在真實工具裡就會發生，所以答案一定要兩條獨立讀法逐題比對（`-raw` 逐列、`-simple` 依水平位置）。
 - **heredoc 裡用 Python 做字串取代，`\n` 很容易被寫成真的換行**（2026-10-08 踩了三次，把程式檔寫壞，其中兩次是先寫檔才編譯；連這一條紀錄本身和上一條的 `\f` 都被寫壞過）。**改程式碼一律用 Edit 工具。**非用腳本不可時，用 `chr(10)`、`chr(92)` 組字，並且先編譯檢查、通過才寫檔。
 - **重跑抽樣腳本會蓋掉已填的核對紀錄**（2026-10-08：為了確認可重現而重跑 `sample_check.py`，把 40 題的核對紀錄蓋掉，事後依原紀錄補回並在檔內註明）。已改成檔案存在就不覆寫，要重寫須加 `--force`；兩向都在暫存複本驗過。
+- **Windows 上 Python 用 subprocess 叫 `bash` 會找到 System32 的 WSL bash**（沒裝發行版就跑不起來；`shutil.which` 卻回 Git Bash，兩者搜尋順序不同）。2026-10-08 pushsafe 驗法五個情境全都沒跑起來，其中四個「擋下」的情境因為也回 1 而顯示通過——**只看回傳值的測試會把當掉算成擋下**。已改成用完整路徑，並要求每個擋下都附指定理由。
+- **GitHub Pages 專案站的 robots.txt 無效**：專案站在子路徑（`…github.io/<repo>/`），搜尋引擎只讀網域根目錄的 robots.txt。本專案不放 robots.txt，靠 `index.html` 的 noindex meta；GitHub Pages 也不能設 X-Robots-Tag 標頭。
 - **Cloudflare Pages 已併進 Workers**（RentCheck 的經驗）：`wrangler pages project create` 會失敗，要用 `wrangler.jsonc` 的 Workers 靜態資產＋`wrangler deploy`。
