@@ -720,8 +720,8 @@ async function importStudyTest(browser, base) {
     await waitText(page, '反覆考過的規定');
     await page.waitForSelector('.study-q');
     const warn = await page.$$eval('.card.warn', cs => cs.map(c => c.innerText));
-    check('反覆考點頁：上下各一張警示卡，寫明「尚未通過驗證」「一組＝同一條規定」「不是考試範圍」「沒出現在清單上不代表不常考」「量的是寫法重複、不等於規定重要」',
-      warn.length === 2 && warn.every(t => t.includes('不是考試範圍') && t.includes('這份分組正在重新核對中，目前的分法尚未通過驗證') && t.includes('一組＝同一條規定在不同期被考過，問法可能不同') && t.includes('沒出現在這份清單上，不代表那條規定不常考') && t.includes(`這 ${pack.points.length} 組量的是「題目寫法重複」，不等於「這條規定重要」`)), JSON.stringify(warn).slice(0, 200));
+    check('反覆考點頁：上下各一張警示卡，寫明「逐組核對過」（不再寫尚未通過驗證）「一組＝同一條規定」「不是考試範圍」「沒出現在清單上不代表不常考」「量的是寫法重複、不等於規定重要」',
+      warn.length === 2 && warn.every(t => t.includes('不是考試範圍') && !t.includes('尚未通過驗證') && t.includes('每一組都逐組核對過，確定問的是同一條規定') && t.includes('一組＝同一條規定在不同期被考過，問法可能不同') && t.includes('沒出現在這份清單上，不代表那條規定不常考') && t.includes(`這 ${pack.points.length} 組量的是「題目寫法重複」，不等於「這條規定重要」`)), JSON.stringify(warn).slice(0, 200));
     const cards = await page.$$eval('.study-q', cs => cs.map(c => ({
       head: c.querySelector('.muted').textContent, stem: c.querySelector('.stem').textContent,
       right: [...c.querySelectorAll(':scope > .study-opts li.right')].map(li => li.textContent) })));
