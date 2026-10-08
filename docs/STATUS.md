@@ -52,15 +52,22 @@
     - 途中自己抓到測試的兩個錯：`page.select` 選不到值不報錯（要 2 題卻停在 10 題）→ 改成核對真的選到；「練完一輪」原本用畫面含「/ 10」判斷，但作答中的進度列「3 / 10」也有 → 改成等結果頁才有的「再練一輪」。
     - 系統暫存區有 78 個 `puppeteer_dev_chrome_profile-*`，最新是 14:01，全部早於本測試（16:3x），**不是本專案留下的**，沒動；本測試建的 `certquiz-*` 已清乾淨（測試結尾會核對「這次新增的」暫存目錄必須是 0）。
     - 這支沒放進 pushsafe（要本機匯入包與 JLPT 的 puppeteer、會開瀏覽器）；**部署前手動跑一次、改過 App 程式也要跑**。
-- **M1 還沒做**：建遠端 repo、第一次 push、開 Pages（要先問）；部署後驗 noindex 真的帶在線上頁面；匯入步驟在手機上實際走一遍後定稿；iPhone Safari 的 IndexedDB 交易行為（未實測）。
-- **本機 git**：分支 `main`，作者 GitHub noreply；`core.hooksPath=.githooks`。**沒有遠端、沒有 push。**推送一律 `bash scripts/pushsafe.sh`，不直接下 `git push`。
+- **部署（2026-10-08，使用者核准四件：名稱、建 repo、第一次 push、開 Pages）**：
+  - **網址：https://yolin0513.github.io/certquiz/**｜repo：github.com/yolin0513/certquiz（公開，main 分支根目錄發布，`.nojekyll`）。
+  - **部署前逐項**：①當時全部 16 個 commit 逐一掃（每個 commit 的完整檔案樹＋commit 訊息與作者）違規 0，之後第 17 個 commit 也由 pushsafe 的歷史掃描涵蓋；私人清單含 PDF 作者欄的 3 個第三人姓名（自動加入、不印出）與使用者 email 帳號；R7 比對 793／796 個不重複題幹（3 個不到 12 字的通用句不比）。②假樣本證明：暫存 clone 用 `--no-verify` commit 6 個假檔（真題幹、員工姓名、真 email、本機路徑、PDF、個人處境敘述）再刪掉，命令列 `--history` 以 R7／R6／R5／R4／R2／R6 逐一點名、假樣本以外 0 筆。③作者與提交者 email 全部是 GitHub noreply。④瀏覽器實測在要部署的 HEAD 上重跑全部符合。
+  - **推送**：`bash scripts/pushsafe.sh` 推 `27a017b`（閘門重跑全部檢查＋pre-push 歷史掃描），遠端 main＝`27a017b`；Pages 從 `27a017b` 建置完成。
+  - **部署後驗證（讀線上，不讀本機）**：`python scripts/verify_live.py https://yolin0513.github.io/certquiz/` 全部符合——驗尺 V3（已知檔回 200）、V4（真題幹餵進去必中）；V1 線上首頁帶 noindex 與 CSP；V2 線上 43 個檔與本機 HEAD `27a017b` 逐位元組相同（以點開頭的檔也原樣發布）；V3 本機專用 7 個路徑線上都是 404；V4 線上 44 份內容無內控題幹、無本機來源欄位；V5 線上 manifest 內控公開 0 題。`node scripts/test_browser.mjs --live https://yolin0513.github.io/certquiz/` 全部符合——驗尺 5 項、匯入 910 題作答 10 筆、整個瀏覽器關掉再開紀錄完全相同、33 筆請求都是網站路徑底下的 GET。驗尺的 3 筆 POST 打到 GitHub Pages（回 405，無作用）。
+  - **途中問題**：verify_live 第一次在中文檔名的網址編碼當掉（回 1，沒被當成通過）；修正時只改工作區、不 commit，讓 HEAD 維持＝已部署的 `27a017b` 再驗，驗完才 commit 修正。
+- **M1 還沒做**：使用者在自己手機上實際走一遍匯入步驟後定稿 `docs/匯入步驟_TABF題庫.md`；iPhone Safari 的 IndexedDB 交易行為（未實測）。
+- **git**：遠端 `origin`＝github.com/yolin0513/certquiz；本 repo 的 `.git/config` 設了 gh 的 credential helper（不動全域設定）。**推送一律 `bash scripts/pushsafe.sh`**，推完跑 `verify_live.py` 與 `test_browser.mjs --live`。
 - **JLPT_App、RentCheck**：只讀，沒有改任何檔。
 
 ## 等使用者回覆
 
 1. **抽檢單**：請照 `data/local/抽檢/使用者_複核.md` 比對 15 題（每題寫了哪份 PDF、第幾頁、第幾題、轉出來的題目與答案）。
 2. （已完成）瀏覽器實測：2026-10-08 Dispatch 准、已跑、全部符合（見交接快照）。
-3. **（使用者，部署前）**：遠端 repo 名稱、建 repo、第一次 push、開 Pages——四件都要先問。
+3. （已完成）部署四件：2026-10-08 使用者核准並完成（見交接快照）。
+4. **（Dispatch）部署後的第一個 commit（STATUS 部署紀錄＋verify_live 中文網址修正）要不要推**，以及之後的例行推送是否還要逐次問。
 
 ## 題庫母體與口徑（2026-10-08）
 

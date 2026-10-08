@@ -18,6 +18,7 @@ import subprocess
 import sys
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 from pathlib import Path
 
@@ -44,6 +45,8 @@ def check(desc, ok, detail=""):
 
 def fetch(url):
     """回傳 (HTTP 狀態, 內容 bytes)。加時間參數避開 CDN 快取。"""
+    # 檔名有中文（docs/A_範圍評估.md 等）：網址要先編碼（2026-10-08 第一次線上驗證時當在這裡）
+    url = urllib.parse.quote(url, safe=":/?&=%#")
     sep = "&" if "?" in url else "?"
     req = urllib.request.Request(f"{url}{sep}v={int(time.time())}", headers={"User-Agent": "certquiz-verify", "Cache-Control": "no-cache"})
     try:
