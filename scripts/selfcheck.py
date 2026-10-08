@@ -18,6 +18,9 @@
        就讀、升任……）與幾個不需要人稱也能指向個人的固定說法（清單見 PERSONAL_RE）；
        (b) 本機私人清單 .selfcheck-private.txt 的每一行（真實姓名、任職機構、學校等，區分大小寫）。
        私人清單本身不入庫（.gitignore＋R1 雙重擋）；清單不存在時照樣跑 (a)，並在輸出註明。
+    R7 題目內容：本機有匯入包（data/local/import/*.json）時，任何檔案含其中任一題的題幹（去空白後，12 字以上）就擋。
+       沒有匯入包時 R7 不啟用，輸出會明寫「R7 未啟用」——那時的「通過」不代表沒有題目內容。
+    --history 另外掃每個 commit 的訊息與作者／提交者名稱、email（推上去一樣公開）。
 
 用法：
     python scripts/selfcheck.py            # 檢查暫存區（pre-commit 用）
@@ -27,6 +30,7 @@
 結束碼：0 通過；1 擋下；2 程式本身出錯（出錯不等於通過）。
 輸出：行首 `SELFCHECK OK` 或 `SELFCHECK BLOCKED`，被擋的每一項一行，行首兩格空白＋規則代號。
 """
+import json
 import os
 import re
 import shutil
@@ -99,7 +103,31 @@ def load_private(cwd):
     return items, True
 
 
-def check_one(path: str, data: bytes, private=()):
+STEM_MIN = 12   # 太短的題幹（例如「下列何者錯誤？」）會在一般文字裡誤中，不拿來比
+
+
+def _norm(s: str) -> str:
+    return re.sub(r"\s+", "", s)
+
+
+def load_stems(cwd):
+    """R7 用：讀本機匯入包裡每一題的題幹（去空白）。回傳 (題幹集合, 讀了幾個匯入包)。
+    匯入包只在本機（data/local/import/），沒有就回空集合——呼叫端必須把「R7 沒啟用」印出來，不能當成通過。"""
+    stems, n = set(), 0
+    for f in sorted((Path(cwd) / "data" / "local" / "import").glob("*.json")):
+        try:
+            pack = json.loads(f.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        n += 1
+        for q in pack.get("questions", []):
+            s = _norm(q.get("stem", ""))
+            if len(s) >= STEM_MIN:
+                stems.add(s)
+    return stems, n
+
+
+def check_one(path: str, data: bytes, private=(), stems=()):
     """回傳這個檔違反的規則清單：[(規則代號, 說明)]。"""
     hits = []
     low = path.lower()
@@ -141,6 +169,11 @@ def check_one(path: str, data: bytes, private=()):
         if pat.search(path.encode("utf-8")):
             hits.append(("R4", "檔名含本機路徑或使用者名稱"))
             break
+    if stems:
+        flat = _norm(text)
+        n = sum(1 for s in stems if s in flat)
+        if n:
+            hits.append(("R7", f"含 {n} 題匯入包裡的題幹（題目內容不得入庫）"))
     return hits
 
 
@@ -152,10 +185,11 @@ def staged_files(cwd):
 def scan_staged(cwd=ROOT):
     problems = []
     private, _ = load_private(cwd)
+    stems, _ = load_stems(cwd)
     files = staged_files(cwd)
     for p in files:
         data = git("show", f":{p}", cwd=cwd)
-        for rule, why in check_one(p, data, private):
+        for rule, why in check_one(p, data, private, stems):
             problems.append((rule, p, why))
     return len(files), problems
 
@@ -164,8 +198,13 @@ def scan_history(cwd=ROOT):
     """所有 ref 可達的每一個 commit、每一個檔。同一個 blob 只讀一次，但每個出現過的路徑都檢查。"""
     problems, seen_blob, seen_pair = [], {}, set()
     private, _ = load_private(cwd)
+    stems, _ = load_stems(cwd)
     commits = git("rev-list", "--all", cwd=cwd).decode().split()
     for c in commits:
+        # commit 訊息與作者／提交者資訊推上去一樣公開，也要掃（路徑類規則不適用，只看內容）
+        msg = git("log", "-1", "--format=%an%n%ae%n%cn%n%ce%n%B", c, cwd=cwd)
+        for rule, why in check_one("", msg, private, stems):
+            problems.append((rule, f"(commit 訊息／作者) @ {c[:8]}", why))
         tree = git("ls-tree", "-r", "-z", c, cwd=cwd).decode("utf-8")
         for entry in filter(None, tree.split("\0")):
             meta, path = entry.split("\t", 1)
@@ -175,7 +214,7 @@ def scan_history(cwd=ROOT):
             seen_pair.add((sha, path))
             if sha not in seen_blob:
                 seen_blob[sha] = git("cat-file", "blob", sha, cwd=cwd)
-            for rule, why in check_one(path, seen_blob[sha], private):
+            for rule, why in check_one(path, seen_blob[sha], private, stems):
                 problems.append((rule, f"{path} @ {c[:8]}", why))
     return len(commits), len(seen_pair), problems
 
@@ -184,6 +223,9 @@ def report(scope, problems):
     _items, exists = load_private(ROOT)
     if not exists:
         scope += f"；注意：沒有 {PRIVATE_LIST}，R6 只檢查內建用語"
+    stems, n_packs = load_stems(ROOT)
+    # R7 有沒有啟用一定要印出來：沒有匯入包時 R7 什麼都沒比，「通過」不代表沒有題目內容（常設規則 13）
+    scope += f"；R7 比對 {len(stems)} 題題幹（{n_packs} 個匯入包）" if stems else "；注意：R7 未啟用（本機沒有匯入包，沒比對題目內容）"
     if not problems:
         print(f"SELFCHECK OK（{scope}）")
         return 0
@@ -241,6 +283,11 @@ def selftest():
     ]
     if len(user) >= 2:
         cases.append(("本機 Windows 使用者名稱", "docs/u.md", f"作者 {user}\n".encode(), False, {"R4"}))
+    fake_stem = "依" + "測試用規定" + "，下列何者為正確之處理方式？"   # 假題幹（執行時才組字串）
+    cases += [
+        ("文件裡夾了匯入包的題幹（R7）", "docs/notes.md", f"筆記：\n{fake_stem}\n".encode(), False, {"R7"}),
+        ("題幹被換行拆開也要抓到（R7）", "docs/notes2.md", f"{fake_stem[:9]}\n  {fake_stem[9:]}\n".encode(), False, {"R7"}),
+    ]
 
     tmp = Path(tempfile.mkdtemp(prefix=f"certquiz-selftest-{os.getpid()}-"))
     fails = []
@@ -265,6 +312,10 @@ def selftest():
 
         # 私人清單（假的），放在 .gitignore 情境之後才建，免得被上面的迴圈刪掉
         (tmp / PRIVATE_LIST).write_text(f"# 測試用\n{fake_org}\n", encoding="utf-8")
+        # 假匯入包（R7 用），放在 data/local/import/（.gitignore 擋）
+        (tmp / "data/local/import").mkdir(parents=True, exist_ok=True)
+        (tmp / "data/local/import/fake.json").write_text(json.dumps(
+            {"format": "certquiz-import", "questions": [{"stem": fake_stem}, {"stem": "太短的題幹"}]}, ensure_ascii=False), encoding="utf-8")
 
         # 每一個樣本單獨一個情境
         for desc, path, content, force, expect in cases:
@@ -303,6 +354,18 @@ def selftest():
         print(f"{'✓' if ok else '✗'} 刪掉的檔仍在歷史裡，--history 要抓到：工作區還在={exists_now}，抓到={ok}")
         if not ok:
             fails.append("history")
+
+        # commit 訊息也要掃：訊息裡帶私人清單的字串，--history 要點名那個 commit 的訊息
+        (tmp / "docs").mkdir(exist_ok=True)   # 上一步 git rm 把空的 docs/ 一起刪了
+        (tmp / "docs/ok.txt").write_text("一般內容\n", encoding="utf-8")
+        git("add", "docs/ok.txt", cwd=tmp)
+        git("commit", "-q", "--no-verify", "-m", f"更新：{fake_org}", cwd=tmp)
+        sha = git("rev-parse", "HEAD", cwd=tmp).decode().strip()[:8]
+        _c, _f, probs = scan_history(tmp)
+        ok = any(r == "R6" and w == f"(commit 訊息／作者) @ {sha}" for r, w, _ in probs)
+        print(f"{'✓' if ok else '✗'} commit 訊息帶私人清單字串，--history 要點名那個 commit：抓到={ok}")
+        if not ok:
+            fails.append("commit message")
     finally:
         _rmtree(tmp)
         if tmp.exists():
