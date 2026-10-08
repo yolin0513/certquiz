@@ -1,0 +1,103 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+build_data.py 的測試：每一條拒絕規則用假樣本證明會擋、而且點名那一題；去重方向；有錯不寫檔。
+全部在暫存目錄裡做（把 build_data 的 SRC／OUT／LOCAL_SRC／LOCAL_OUT 指過去），不碰真的 data/。
+結束碼：0 全部符合；1 有不符。
+"""
+import json
+import shutil
+import sys
+import tempfile
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import build_data as B  # noqa: E402
+
+for _s in (sys.stdout, sys.stderr):
+    try:
+        _s.reconfigure(encoding="utf-8")
+    except Exception:
+        pass
+
+REAL_CERTS = (B.ROOT / "data" / "src" / "certs.json").read_text(encoding="utf-8")
+
+
+def block(qid, chapter, stem, opts, ans, source, **extra):
+    lines = [f"=== {qid}", "type: single", f"chapter: {chapter}", f"stem: {stem}"]
+    lines += [f"{k}: {o}" for k, o in zip("1234", opts)]
+    lines += [f"answer: {ans}", f"source: {source}"] + [f"{k}: {v}" for k, v in extra.items()] + [""]
+    return "\n".join(lines)
+
+
+GOOD_AZ = block("az900-a-o-0001", "az900.all", "Which is a benefit of cloud?", ["High availability", "Lock-in", "CapEx only", "None"], 1, "original-ai")
+GOOD_BIC_47 = block("bic-law-t47-001", "bic.law", "同一題", ["甲", "乙", "丙", "丁"], 2, "tabf-official", period=47, law_as_of="2025-03-17")
+GOOD_BIC_40 = block("bic-law-u40-007", "bic.law", "同一題", ["甲", "乙", "丙", "丁"], 2, "user-import", period=40, law_as_of="2021-11-22")
+
+
+def run_case(desc, public_files, local_files, mode, expect_ok, expect_ids=(), check=None):
+    tmp = Path(tempfile.mkdtemp(prefix="certquiz-build-"))
+    saved = (B.SRC, B.OUT, B.LOCAL_SRC, B.LOCAL_OUT)
+    try:
+        (tmp / "src").mkdir()
+        (tmp / "src" / "certs.json").write_text(REAL_CERTS, encoding="utf-8")
+        for rel, text in public_files.items():
+            p = tmp / "src" / rel
+            p.parent.mkdir(parents=True, exist_ok=True)
+            p.write_text(text, encoding="utf-8")
+        for rel, text in local_files.items():
+            p = tmp / "lsrc" / rel
+            p.parent.mkdir(parents=True, exist_ok=True)
+            p.write_text(text, encoding="utf-8")
+        B.SRC, B.OUT, B.LOCAL_SRC, B.LOCAL_OUT = tmp / "src", tmp / "out", tmp / "lsrc", tmp / "lout"
+        certs = B.load_certs()
+        fn = B.build_public if mode == "public" else B.build_local
+        msg, errs = fn(certs, False)
+        written = [p for p in list((tmp / "out").rglob("*")) + list((tmp / "lout").rglob("*")) if p.is_file()] \
+            if (tmp / "out").exists() or (tmp / "lout").exists() else []
+        if expect_ok:
+            ok = not errs and bool(written) and (check is None or check(tmp))
+        else:
+            ok = bool(errs) and not written and all(any(i in e for e in errs) for i in expect_ids)
+        print(f"{'✓' if ok else '✗'} {desc}：{'通過' if not errs else '擋下'}，寫出 {len(written)} 個檔")
+        if not ok:
+            for e in errs[:3]:
+                print(f"    {e}")
+        return ok
+    finally:
+        B.SRC, B.OUT, B.LOCAL_SRC, B.LOCAL_OUT = saved
+        shutil.rmtree(tmp, ignore_errors=False)
+
+
+def dedup_check(tmp):
+    pack = json.loads((tmp / "lout" / "bic-匯入包.json").read_text(encoding="utf-8"))
+    by = {q["id"]: q for q in pack["questions"]}
+    return (by["bic-law-u40-007"].get("dupOf") == "bic-law-t47-001" and "dupOf" not in by["bic-law-t47-001"]
+            and pack["counts"]["active"] == 1 and pack["counts"]["total"] == 2)
+
+
+def main():
+    cases = [
+        ("原樣：公開 AZ-900 原創題", {"az900/a.txt": GOOD_AZ}, {}, "public", True),
+        ("原樣：本機匯入包", {}, {"bic/a.txt": GOOD_BIC_47}, "local", True),
+        ("公開題庫混進 tabf-official 的題 → 擋、點名", {"bic/x.txt": GOOD_BIC_47}, {}, "public", False, ["bic-law-t47-001"]),
+        ("公開題庫混進 user-import 的題 → 擋、點名", {"bic/x.txt": GOOD_BIC_40}, {}, "public", False, ["bic-law-u40-007"]),
+        ("AZ-900 的 source 不是 original-* → 擋", {"az900/a.txt": GOOD_AZ.replace("original-ai", "vendor-dump")}, {}, "public", False, ["az900-a-o-0001"]),
+        ("兩個檔有同一個 id → 擋、點名", {"az900/a.txt": GOOD_AZ, "az900/b.txt": GOOD_AZ}, {}, "public", False, ["az900-a-o-0001"]),
+        ("答案不在選項裡 → 擋、點名", {"az900/a.txt": GOOD_AZ.replace("answer: 1", "answer: 5")}, {}, "public", False, ["az900-a-o-0001"]),
+        ("少一個選項 → 擋、點名", {"az900/a.txt": GOOD_AZ.replace("4: None\n", "")}, {}, "public", False, ["az900-a-o-0001"]),
+        ("內控題缺 law_as_of → 擋、點名", {}, {"bic/a.txt": GOOD_BIC_47.replace("law_as_of: 2025-03-17\n", "")}, "local", False, ["bic-law-t47-001"]),
+        ("本機匯入包混進原創題 → 擋", {}, {"bic/a.txt": GOOD_BIC_47.replace("tabf-official", "original-ai")}, "local", False, ["bic-law-t47-001"]),
+        ("去重：40 期與 47 期同一題 → 保留 47 期、40 期標 dupOf", {}, {"bic/a.txt": GOOD_BIC_40, "bic/b.txt": GOOD_BIC_47}, "local", True, (), dedup_check),
+        ("一題有錯、其他題都對 → 一個檔都不寫", {"az900/a.txt": GOOD_AZ, "az900/b.txt": GOOD_AZ.replace("az900-a-o-0001", "az900-a-o-0002").replace("answer: 1", "answer: 9")}, {}, "public", False, ["az900-a-o-0002"]),
+    ]
+    fails = sum(0 if run_case(*c) else 1 for c in cases)
+    if fails:
+        print(f"TEST-BUILD FAILED：{fails} 項不符")
+        return 1
+    print(f"TEST-BUILD OK：{len(cases)} 項全部符合")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

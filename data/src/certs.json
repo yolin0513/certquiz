@@ -1,0 +1,32 @@
+{
+  "_說明": "證照定義（入庫、公開）。題目本身不在這裡：內控的官方題只能由使用者在 App 內匯入；AZ-900 原創題在 M3 加進 data/src/az900/。",
+  "certs": [
+    {
+      "id": "bic",
+      "name": "銀行內部控制與內部稽核測驗（一般金融）",
+      "short": "銀行內控",
+      "org": "台灣金融研訓院",
+      "lang": "zh-Hant",
+      "status": "active",
+      "questionSource": "import",
+      "notice": "本網站不提供這張證照的題目。題目來自使用者自行取得的官方歷屆試題，只存在使用者自己的裝置裡；答案以各期測驗當時的法規為準。",
+      "subjects": [
+        { "id": "law", "name": "銀行內部控制與內部稽核法規", "exam": { "count": 50, "minutes": 60, "pass": 70, "points": 2 } },
+        { "id": "gen", "name": "銀行內部控制與內部稽核（實務）", "exam": { "count": 80, "minutes": 90, "pass": 70, "points": 1.25 } }
+      ]
+    },
+    {
+      "id": "az900",
+      "name": "Microsoft Azure Fundamentals（AZ-900）",
+      "short": "AZ-900",
+      "org": "Microsoft",
+      "lang": "zh-Hant",
+      "status": "planned",
+      "questionSource": "bundled",
+      "notice": "原創練習題，不是考題；依官方 study guide（Skills measured as of July 20, 2026）出題。本網站與 Microsoft 無關。",
+      "subjects": [
+        { "id": "all", "name": "AZ-900（全部領域）", "exam": null }
+      ]
+    }
+  ]
+}
