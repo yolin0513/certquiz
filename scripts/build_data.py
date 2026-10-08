@@ -82,6 +82,15 @@ def parse_blocks(path: Path):
     return out
 
 
+def norm_ws(s):
+    return re.sub(r"\s+", " ", s.replace("\u00a0", " ").replace("\u200b", "")).strip()
+
+
+def basis_hash(quote):
+    """與 verify_basis.qhash 相同：空白正規化後的 sha256。"""
+    return hashlib.sha256(norm_ws(quote).encode("utf-8")).hexdigest()
+
+
 def norm_key(q):
     return q["stem"] + "|" + "|".join(q["options"])
 
@@ -120,7 +129,7 @@ def validate(q, where, cert_ids, mode):
     if not qid.startswith(cert + "-"):
         errs.append(f"{tag}：id 開頭跟 chapter 的證照 {cert!r} 不一致")
     src = q.get("source", "")
-    if mode == "public":
+    if mode in ("public", "draft"):
         if src in LOCAL_SOURCES:
             errs.append(f"{tag}：source {src} 只能留在本機，不得進公開題庫")
         elif src not in PUBLIC_SOURCES:
@@ -139,8 +148,20 @@ def validate(q, where, cert_ids, mode):
             errs.append(f"{tag}：skill {q.get('skill')!r} 必須是 {q.get('objective')} 底下第 1～{n_skills} 個官方細項")
         if not q.get("basis", "").startswith("https://learn.microsoft.com/en-us/"):
             errs.append(f"{tag}：basis 必須是 https://learn.microsoft.com/en-us/ 的官方文件網址")
-        if not 20 <= len(q.get("basis_quote", "")) <= 400:
-            errs.append(f"{tag}：basis_quote 必須是那頁逐字摘錄的原文（20～400 字元）")
+        # 原文只留本機（Dispatch 2026-10-08）：公開題目檔只存定位資訊；草稿要有原文，而且定位資訊要跟原文對得上
+        quote = q.get("basis_quote", "")
+        if mode == "public" and quote:
+            errs.append(f"{tag}：公開題目檔不得含 basis_quote（原文只留本機，放 data/local/basis/）")
+        if mode == "draft":
+            if not 20 <= len(quote) <= 400:
+                errs.append(f"{tag}：草稿必須有 basis_quote（那頁逐字摘錄的原文，20～400 字元）")
+            elif q.get("basis_hash") != basis_hash(quote) or q.get("basis_len") != str(len(norm_ws(quote))):
+                errs.append(f"{tag}：basis_hash／basis_len 跟 basis_quote 對不上（改過原文要重跑 verify_basis.py --fill）")
+        if not re.fullmatch(r"[0-9a-f]{64}", q.get("basis_hash", "")) or not q.get("basis_len", "").isdigit():
+            errs.append(f"{tag}：缺 basis_hash（原文 sha256）或 basis_len（原文字數）")
+        anchor = q.get("basis_anchor", "")
+        if not anchor.startswith("#") or (anchor != "#" and not q.get("basis_section")):
+            errs.append(f"{tag}：缺 basis_anchor（章節錨點，頁首用 #）或 basis_section（章節標題）")
         if not q.get("explain"):
             errs.append(f"{tag}：缺 explain（解析）")
     out = {
@@ -152,8 +173,8 @@ def validate(q, where, cert_ids, mode):
     for k in ("period", "qno", "page", "skill"):
         if q.get(k, "").isdigit():
             out[k] = int(q[k])
-    # basis_quote 只供核對、不輸出到 App（STATUS 規則 5 待決）
-    for k in ("law_as_of", "basis", "objective", "explain", "status"):
+    # basis_quote（原文）與 basis_hash／basis_len 只供核對，不輸出到 App
+    for k in ("law_as_of", "basis", "basis_anchor", "basis_section", "objective", "explain", "status"):
         if q.get(k):
             out[k] = q[k]
     return out, errs
@@ -193,7 +214,7 @@ def coverage(certs, qs):
 def check_draft(certs, draft_dir: Path):
     """草稿（還沒進 repo 的題目檔）：用公開題庫的規則檢查，不寫任何檔。"""
     cert_ids = {c["id"] for c in certs}
-    files, qs, errs = collect(draft_dir, cert_ids, "public")
+    files, qs, errs = collect(draft_dir, cert_ids, "draft")
     for q in qs:
         if q["cert"] == "az900" and not q["source"].startswith("original-"):
             errs.append(f"{q['id']}：AZ-900 只能收原創題")

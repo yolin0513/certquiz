@@ -181,5 +181,8 @@ export function sourceLabel(q) {
 
 /** 原創題的依據網址：只當文字顯示、不做成連結（做成連結＝新增對外連線，見 docs/I） */
 export function basisText(q) {
-  return q.basis ? `依據（官方文件）：${q.basis}` : '';
+  if (!q.basis) return '';
+  const anchor = q.basis_anchor && q.basis_anchor !== '#' ? q.basis_anchor : '';
+  const section = anchor && q.basis_section ? `（章節：${q.basis_section}）` : '';
+  return `依據（官方文件）：${q.basis}${anchor}${section}`;
 }

@@ -61,6 +61,8 @@ check('原創題標「不是考題」', L.sourceLabel({ source: 'original-ai' })
 check('原創題標大綱節次與細項', L.sourceLabel({ source: 'original-ai', objective: 'B.3', skill: 2 }) === '原創練習題，不是考題・官方大綱 B.3（第 2 細項）');
 check('依據網址原樣當文字', L.basisText({ basis: 'https://learn.microsoft.com/en-us/x' }) === '依據（官方文件）：https://learn.microsoft.com/en-us/x');
 check('沒有依據就不顯示', L.basisText({}) === '');
+check('依據帶章節錨點與標題', L.basisText({ basis: 'https://learn.microsoft.com/en-us/x', basis_anchor: '#lock-inheritance', basis_section: 'Lock inheritance' }) === '依據（官方文件）：https://learn.microsoft.com/en-us/x#lock-inheritance（章節：Lock inheritance）');
+check('錨點是頁首（#）就只顯示網址', L.basisText({ basis: 'https://learn.microsoft.com/en-us/x', basis_anchor: '#' }) === '依據（官方文件）：https://learn.microsoft.com/en-us/x');
 check('官方題不帶大綱標示', !L.sourceLabel(q('x', { objective: 'B.3' })).includes('大綱'));
 check('官方題標期別、題號、法規基準', /第 47 期第 1 題.*法規基準：2025-03-17/.test(L.sourceLabel(q('x', { law_as_of: '2025-03-17' }))));
 

@@ -32,9 +32,14 @@ def block(qid, chapter, stem, opts, ans, source, **extra):
     return "\n".join(lines)
 
 
+QUOTE = "This is a verbatim sentence copied from the cited page."
+# 公開題目檔：只有定位資訊（錨點、章節、雜湊、字數），沒有原文
 GOOD_AZ = block("az900-a-o-0001", "az900.all", "Which is a benefit of cloud?", ["High availability", "Lock-in", "CapEx only", "None"], 1, "original-ai",
                 objective="A.2", skill="1", basis="https://learn.microsoft.com/en-us/azure/example-page",
-                basis_quote="This is a verbatim sentence copied from the cited page.", explain="解析。")
+                basis_anchor="#overview", basis_section="Overview", basis_hash=B.basis_hash(QUOTE), basis_len=str(len(QUOTE)),
+                explain="解析。")
+# 草稿：同一題再加原文
+GOOD_AZ_DRAFT = GOOD_AZ.replace("explain: ", f"basis_quote: {QUOTE}\nexplain: ")
 GOOD_BIC_47 = block("bic-law-t47-001", "bic.law", "同一題", ["甲", "乙", "丙", "丁"], 2, "tabf-official", period=47, law_as_of="2025-03-17")
 GOOD_BIC_40 = block("bic-law-u40-007", "bic.law", "同一題", ["甲", "乙", "丙", "丁"], 2, "user-import", period=40, law_as_of="2021-11-22")
 
@@ -81,19 +86,30 @@ def dedup_check(tmp):
 
 
 def draft_dir_cases():
-    """--draft：給對目錄要讀到題；給錯一層（0 題）不能算通過。"""
-    tmp = Path(tempfile.mkdtemp(prefix="certquiz-draft-"))
-    try:
-        (tmp / "az900").mkdir()
-        (tmp / "az900" / "a.txt").write_text(GOOD_AZ, encoding="utf-8")
-        with contextlib.redirect_stdout(io.StringIO()):
-            rc_ok = B.main(["--draft", str(tmp)])
-            rc_wrong = B.main(["--draft", str(tmp / "az900")])
-        ok = rc_ok == 0 and rc_wrong == 2
-        print(f"{'✓' if ok else '✗'} --draft：給對目錄 → 結束碼 {rc_ok}（應 0）；給錯一層、0 題 → 結束碼 {rc_wrong}（應 2）")
-        return ok
-    finally:
-        shutil.rmtree(tmp)
+    """--draft：給對目錄要讀到題；給錯一層（0 題）不能算通過；草稿要有原文且雜湊對得上。"""
+    def run(text, sub=""):
+        tmp = Path(tempfile.mkdtemp(prefix="certquiz-draft-"))
+        try:
+            (tmp / "az900").mkdir()
+            (tmp / "az900" / "a.txt").write_text(text, encoding="utf-8")
+            buf = io.StringIO()
+            with contextlib.redirect_stdout(buf):
+                rc = B.main(["--draft", str(tmp / sub) if sub else str(tmp)])
+            return rc, buf.getvalue()
+        finally:
+            shutil.rmtree(tmp)
+    rows = [
+        ("--draft 給對目錄 → 通過", run(GOOD_AZ_DRAFT), 0, "DRAFT OK"),
+        ("--draft 給錯一層、0 題 → 不能算通過", run(GOOD_AZ_DRAFT, "az900"), 2, "DRAFT ABORT"),
+        ("草稿缺原文 → 擋", run(GOOD_AZ), 1, "草稿必須有 basis_quote"),
+        ("草稿原文改了一個字、雜湊沒重算 → 擋", run(GOOD_AZ_DRAFT.replace("verbatim", "verbatum")), 1, "對不上"),
+    ]
+    ok_all = True
+    for desc, (rc, out), want, why in rows:
+        ok = rc == want and why in out
+        ok_all &= ok
+        print(f"{'✓' if ok else '✗'} {desc}：結束碼 {rc}（應 {want}）")
+    return ok_all
 
 
 def main():
@@ -109,7 +125,9 @@ def main():
         ("內控題缺 law_as_of → 擋、點名", {}, {"bic/a.txt": GOOD_BIC_47.replace("law_as_of: 2025-03-17\n", "")}, "local", False, ["bic-law-t47-001"]),
         ("本機匯入包混進原創題 → 擋", {}, {"bic/a.txt": GOOD_BIC_47.replace("tabf-official", "original-ai")}, "local", False, ["bic-law-t47-001"]),
         ("去重：40 期與 47 期同一題 → 保留 47 期、40 期標 dupOf", {}, {"bic/a.txt": GOOD_BIC_40, "bic/b.txt": GOOD_BIC_47}, "local", True, (), dedup_check),
-        ("AZ-900 缺 basis_quote（真值不在文件上）→ 擋、點名", {"az900/a.txt": GOOD_AZ.replace("basis_quote: This is a verbatim sentence copied from the cited page.\n", "")}, {}, "public", False, ["az900-a-o-0001"]),
+        ("公開題目檔夾帶原文 basis_quote → 擋、點名（原文只留本機）", {"az900/a.txt": GOOD_AZ_DRAFT}, {}, "public", False, ["az900-a-o-0001"]),
+        ("AZ-900 缺 basis_hash → 擋、點名", {"az900/a.txt": GOOD_AZ.replace("basis_hash: ", "x_hash: ")}, {}, "public", False, ["az900-a-o-0001"]),
+        ("AZ-900 缺 basis_anchor → 擋、點名", {"az900/a.txt": GOOD_AZ.replace("basis_anchor: #overview\n", "")}, {}, "public", False, ["az900-a-o-0001"]),
         ("AZ-900 的 basis 不是 learn.microsoft.com → 擋、點名", {"az900/a.txt": GOOD_AZ.replace("https://learn.microsoft.com/en-us/azure/example-page", "https://example.com/x")}, {}, "public", False, ["az900-a-o-0001"]),
         ("AZ-900 的 objective 不在官方大綱 → 擋、點名", {"az900/a.txt": GOOD_AZ.replace("objective: A.2", "objective: Z.9")}, {}, "public", False, ["az900-a-o-0001"]),
         ("AZ-900 的 skill 超出該節次的官方細項數 → 擋、點名", {"az900/a.txt": GOOD_AZ.replace("skill: 1", "skill: 5")}, {}, "public", False, ["az900-a-o-0001"]),
@@ -121,7 +139,7 @@ def main():
     if fails:
         print(f"TEST-BUILD FAILED：{fails} 項不符")
         return 1
-    print(f"TEST-BUILD OK：{len(cases) + 1} 項全部符合")
+    print(f"TEST-BUILD OK：{len(cases) + 4} 項全部符合")
     return 0
 
 
