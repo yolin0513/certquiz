@@ -12,7 +12,11 @@ TABF 轉檔的人工抽檢：兩份互不重疊、可重現的抽樣
     claude_核對.md   給 Claude 對照 PDF 用
     使用者_複核.md   給使用者：每題寫明哪一份 PDF、第幾頁、第幾題，以及轉出來的題目與答案，只要比對
 
-用法：python scripts/sample_check.py
+- 第三份（Claude 核對使用者提供那批）：`--user-batch`，從 user-import 題目中**沒被跨來源核對涵蓋**的題目
+  分層抽 N3 題，種子 SEED_USERBATCH。跨來源核對＝題幹＋選項逐字相同、官網也有的題，已被官網答案獨立驗過。
+
+用法：python scripts/sample_check.py              # 官網那批：Claude 40＋使用者 15
+      python scripts/sample_check.py --user-batch # 使用者提供那批：Claude 20
 """
 import random
 import re
@@ -30,13 +34,14 @@ SRC = ROOT / "data" / "local" / "src" / "bic"
 OUT = ROOT / "data" / "local" / "抽檢"
 SEED_CLAUDE = 20261008
 SEED_USER = 51808601
-N1, N2 = 40, 15
+SEED_USERBATCH = 20261009
+N1, N2, N3 = 40, 15, 20
 SUBJ_ZH = {"law": "法規", "gen": "實務"}
 
 
-def load():
+def load(pattern="tabf-p*-*.txt"):
     qs = []
-    for f in sorted(SRC.glob("tabf-p*-*.txt")):
+    for f in sorted(SRC.glob(pattern)):
         for block in f.read_text(encoding="utf-8").split("\n=== ")[1:]:
             lines = block.splitlines()
             q = {"id": lines[0].strip()}
@@ -65,6 +70,8 @@ def stratified(pool, n, seed):
 
 def pdf_name(q):
     p = q["period"]
+    if q.get("source") == "user-import":
+        return f"第{p}期_法規(一般消費共用).pdf" if q["subj"] == "law" else f"第{p}期_一般金融_實務.pdf"
     return f"第{p}期_一般金融_{SUBJ_ZH[q['subj']]}.pdf"
 
 
@@ -83,7 +90,43 @@ def render(qs, title, intro, for_user):
     return "\n".join(out)
 
 
+def norm_key(q):
+    s = q["stem"] + "|" + "|".join(q[k] for k in "1234")
+    return re.sub(r"[\s，,。．.、？?：:（）()「」『』]", "", s)
+
+
+def write_sheet(path, text):
+    """抽檢單一旦寫出，就可能被填上核對結果；重跑不准蓋掉（2026-10-08 踩過：重跑把 40 題的核對紀錄蓋掉）。
+    檔案已存在時：內容的抽樣部分沒變就不動；要重寫必須加 --force。回傳 True＝寫了或不必寫。"""
+    if path.exists() and "--force" not in sys.argv:
+        print(f"• {path.name} 已存在，沒有覆寫（可能已有核對紀錄；真的要重寫請加 --force）")
+        return True
+    path.write_text(text, encoding="utf-8", newline="\n")
+    return True
+
+
+def main_user_batch():
+    official = load("tabf-p*-*.txt")
+    user = load("user-p*-*.txt")
+    covered = {norm_key(q) for q in official}
+    pool = [q for q in user if norm_key(q) not in covered]
+    picked = stratified(pool, N3, SEED_USERBATCH)
+    OUT.mkdir(parents=True, exist_ok=True)
+    write_sheet(OUT / "claude_核對_使用者提供.md", render(
+        picked, f"Claude 核對清單：使用者提供那批（{N3} 題，種子 {SEED_USERBATCH}）",
+        [f"只從沒被跨來源核對涵蓋的 {len(pool)} 題抽（使用者提供共 {len(user)} 題）。PDF 在 refs/user/tabf/。",
+         "逐題對照 PDF 的頁面影像：題幹、四個選項、頁碼；答案對該期一般金融答案卷。"], False))
+    cnt = {}
+    for q in picked:
+        cnt[(q["period"], SUBJ_ZH[q["subj"]])] = cnt.get((q["period"], SUBJ_ZH[q["subj"]]), 0) + 1
+    print(f"SAMPLE OK（使用者提供那批）：共 {len(user)} 題，未被跨來源涵蓋 {len(pool)} 題，抽 {N3} 題（種子 {SEED_USERBATCH}）")
+    print("  " + "、".join(f"第{p}期{z} {c}" for (p, z), c in sorted(cnt.items())))
+    return 0
+
+
 def main():
+    if "--user-batch" in sys.argv:
+        return main_user_batch()
     qs = load()
     if len(qs) < N1 + N2:
         print(f"SAMPLE ABORT：題目只有 {len(qs)} 題")
@@ -94,16 +137,15 @@ def main():
     user = stratified(rest, N2, SEED_USER)
     assert not mine_ids & {q["id"] for q in user}, "兩份抽樣重疊"
     OUT.mkdir(parents=True, exist_ok=True)
-    (OUT / "claude_核對.md").write_text(render(
+    write_sheet(OUT / "claude_核對.md", render(
         mine, f"Claude 核對清單（{N1} 題，種子 {SEED_CLAUDE}）",
-        ["逐題對照官方 PDF 的頁面影像：題幹、四個選項、答案。"], False), encoding="utf-8", newline="\n")
-    (OUT / "使用者_複核.md").write_text(render(
+        ["逐題對照官方 PDF 的頁面影像：題幹、四個選項、答案。"], False))
+    write_sheet(OUT / "使用者_複核.md", render(
         user, f"TABF 題庫抽檢單（{N2} 題）",
         [f"這 {N2} 題是從 Claude 沒核對過的 {len(rest)} 題裡隨機抽的（種子 {SEED_USER}，重跑會抽到同一批）。",
          "每題寫了：哪一份 PDF、第幾頁、第幾題，以及程式轉出來的題目、選項和答案。",
          "**請打開那份 PDF 的那一頁，比對下面的文字是否一致**，特別是「答案」那一行。",
-         "PDF 在電腦的 `CertQuiz/refs/tabf/past/` 資料夾；也可以從 TABF 官網「歷屆試題」重新下載同一份。"], True),
-        encoding="utf-8", newline="\n")
+         "PDF 在電腦的 `CertQuiz/refs/tabf/past/` 資料夾；也可以從 TABF 官網「歷屆試題」重新下載同一份。"], True))
     print(f"SAMPLE OK：全部 {len(qs)} 題｜Claude {N1} 題（種子 {SEED_CLAUDE}）｜使用者 {N2} 題（種子 {SEED_USER}，從其餘 {len(rest)} 題抽）｜不重疊")
     for name, s in (("Claude", mine), ("使用者", user)):
         cnt = {}
