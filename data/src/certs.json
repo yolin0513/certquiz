@@ -14,6 +14,7 @@
         {
           "id": "law",
           "name": "銀行內部控制與內部稽核法規",
+          "short": "法規",
           "exam": {
             "count": 50,
             "minutes": 60,
@@ -24,6 +25,7 @@
         {
           "id": "gen",
           "name": "銀行內部控制與內部稽核（實務）",
+          "short": "實務",
           "exam": {
             "count": 80,
             "minutes": 90,

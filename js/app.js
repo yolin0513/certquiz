@@ -80,14 +80,14 @@ async function homeView(gen) {
       body.push(
         h('p', { class: 'stat' }, `可練 ${active.length} 題`, questions.length !== active.length ? `（另有重複題 ${questions.length - active.length} 題已隱藏）` : ''),
         h('p', { class: 'stat' }, `已作答 ${s.answered} 次，答對率 ${s.answered ? pct(s.rate) : '—'}，錯題 ${mistakes.length} 題`),
-        h('div', { class: 'row' },
-          h('a', { class: 'btn primary', href: `#/study?cert=${c.id}`, text: c.syllabus ? '讀書（依官方大綱）' : '讀書（反覆考點與歷屆題目）' }),
+        // 按鈕一律兩欄等寬的格子、順序固定（讀書、練習、錯題、統計，再接模擬考），兩張卡片才排得齊
+        h('div', { class: 'actions' },
+          h('a', { class: 'btn primary', href: `#/study?cert=${c.id}`, text: '讀書' }),
           h('a', { class: 'btn', href: `#/setup?cert=${c.id}`, text: '開始練習' }),
-          h('a', { class: 'btn', href: `#/practice?cert=${c.id}&mode=mistakes&count=20`, 'aria-disabled': mistakes.length ? null : 'true', text: `錯題複習（${mistakes.length}）` })),
-        h('div', { class: 'row' },
+          h('a', { class: 'btn', href: `#/practice?cert=${c.id}&mode=mistakes&count=20`, 'aria-disabled': mistakes.length ? null : 'true', text: `錯題複習 ${mistakes.length}` }),
+          h('a', { class: 'btn', href: `#/stats?cert=${c.id}`, text: '統計' }),
           c.subjects.filter(s => s.exam).map(s => h('a', { class: 'btn', href: `#/exam?cert=${c.id}&subject=${s.id}`,
-            text: `模擬考：${s.name.replace(/^銀行內部控制與內部稽核/, '') || s.name}` })),
-          h('a', { class: 'btn', href: `#/stats?cert=${c.id}`, text: '統計' })));
+            text: `模擬考：${s.short || s.name}` }))));
     }
     cards.push(h('section', { class: 'card' }, h('h2', { text: c.name }), h('p', { class: 'notice', text: c.notice }), ...body));
   }
@@ -340,16 +340,20 @@ async function studyView(gen, q) {
   if (!skill) {
     // 大綱目錄：依領域分段，每個細項一個連結，附題數
     const domains = [...new Set(g.objectives.map(o => o.domain))];
+    const studied = await DB.getMeta('studied', {});
     render(gen, back,
       h('section', { class: 'card' }, h('h2', { text: `${cert.short} 讀書：依官方大綱` }),
         h('p', { class: 'muted', text: `${cert.syllabus.version}。細項名稱是官方原文；點進去可以看題目、正解、解析與依據，看完再練那一節。` })),
       domains.map(d => h('section', { class: 'card' }, h('h3', { text: d }),
         g.objectives.filter(o => o.domain === d).map(o => h('div', { class: 'study-obj' },
           h('p', { class: 'stat' }, h('b', { text: `${o.id} ${o.name}` }), `（${o.count} 題）`),
-          h('ol', { class: 'study-skills' }, o.skills.map(k => h('li', {},
-            k.questions.length
-              ? h('a', { href: `#/study?cert=${certId}&objective=${o.id}&skill=${k.n}`, text: `${k.name}（${k.questions.length} 題）` })
-              : h('span', { class: 'muted', text: k.name })))))))),
+          // 細項是可點的列（不是裸連結）；「讀過」用文字標，不靠連結的已點／未點顏色
+          h('div', { class: 'study-skills' }, o.skills.map(k => k.questions.length
+            ? h('a', { class: 'item', href: `#/study?cert=${certId}&objective=${o.id}&skill=${k.n}` },
+              h('span', { class: 'n', text: `${k.n}.` }), h('span', { class: 'name', text: k.name }),
+              h('span', { class: 'meta', text: `${k.questions.length} 題${studied[L.studyKey(k.questions[0])] ? '・✓ 已讀' : ''}` }))
+            : h('div', { class: 'item none' }, h('span', { class: 'n', text: `${k.n}.` }), h('span', { class: 'name', text: k.name }),
+              h('span', { class: 'meta', text: '沒有題目' })))))))),
       g.other.length ? h('section', { class: 'card' }, h('p', { class: 'ng', text: `有 ${g.other.length} 題對不到大綱節次，請回報。` })) : null);
     return;
   }
@@ -392,7 +396,7 @@ async function importStudyView(gen, q, cert, questions) {
     h('a', { class: view === 'points' ? 'btn primary' : 'btn', href: `#/study?cert=${certId}`, text: '反覆考點' }),
     h('a', { class: view === 'browse' ? 'btn primary' : 'btn', href: `#/study?cert=${certId}&view=browse`, text: '依科目與期別瀏覽' }));
   const active = questions.filter(L.isActive);
-  const subjName = new Map(cert.subjects.map(s => [s.id, s.name.replace(/^銀行內部控制與內部稽核/, '') || s.name]));
+  const subjName = new Map(cert.subjects.map(s => [s.id, s.short || s.name]));
   const optsList = x => h('ol', { class: 'study-opts' }, x.options.map((t, k) => h('li', { class: k + 1 === x.answer ? 'right' : null },
     h('span', { text: t }), k + 1 === x.answer ? h('b', { text: '（正解）' }) : null)));
   const home = h('a', { class: 'back', href: '#/', text: '← 回首頁' });
