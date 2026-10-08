@@ -26,6 +26,7 @@ run python -I scripts/check_privacy.py --selftest
 run python -I scripts/test_build_data.py
 run node scripts/test_logic.mjs
 run python -I scripts/test_verify_live.py
+run python -I scripts/test_verify_basis.py
 run python -I scripts/selfcheck.py --history
 run python -I scripts/check_privacy.py
 run python -I scripts/build_data.py --check

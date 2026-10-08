@@ -26,7 +26,24 @@
       "notice": "原創練習題，不是考題；依官方 study guide（Skills measured as of July 20, 2026）出題。本網站與 Microsoft 無關。",
       "subjects": [
         { "id": "all", "name": "AZ-900（全部領域）", "exam": null }
-      ]
+      ],
+      "syllabus": {
+        "version": "Skills measured as of July 20, 2026",
+        "source": "https://learn.microsoft.com/en-us/credentials/certifications/resources/study-guides/az-900",
+        "objectives": [
+          { "id": "A.1", "name": "Describe cloud computing", "domain": "Describe cloud concepts (25–30%)" },
+          { "id": "A.2", "name": "Describe the benefits of using cloud services", "domain": "Describe cloud concepts (25–30%)" },
+          { "id": "A.3", "name": "Describe cloud service types", "domain": "Describe cloud concepts (25–30%)" },
+          { "id": "B.1", "name": "Describe the core architectural components of Azure", "domain": "Describe Azure architecture and services (35–40%)" },
+          { "id": "B.2", "name": "Describe Azure compute and networking services", "domain": "Describe Azure architecture and services (35–40%)" },
+          { "id": "B.3", "name": "Describe Azure storage services", "domain": "Describe Azure architecture and services (35–40%)" },
+          { "id": "B.4", "name": "Describe Azure identity, access, and security", "domain": "Describe Azure architecture and services (35–40%)" },
+          { "id": "C.1", "name": "Describe cost management in Azure", "domain": "Describe Azure management and governance (30–35%)" },
+          { "id": "C.2", "name": "Describe features and tools in Azure for governance and compliance", "domain": "Describe Azure management and governance (30–35%)" },
+          { "id": "C.3", "name": "Describe features and tools for managing and deploying Azure resources", "domain": "Describe Azure management and governance (30–35%)" },
+          { "id": "C.4", "name": "Describe monitoring tools in Azure", "domain": "Describe Azure management and governance (30–35%)" }
+        ]
+      }
     }
   ]
 }

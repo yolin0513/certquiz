@@ -130,6 +130,16 @@ def validate(q, where, cert_ids, mode):
             errs.append(f"{tag}：本機匯入包的 source 必須是 {sorted(LOCAL_SOURCES)}，拿到 {src!r}")
     if cert == "bic" and not re.match(r"^\d{4}-\d{2}-\d{2}$", q.get("law_as_of", "")):
         errs.append(f"{tag}：內控題必須有 law_as_of（YYYY-MM-DD）")
+    if cert == "az900":
+        # 原創題的真值在官方文件上（docs/I_原創題的真值.md）：缺任何一個依據欄位就不收
+        if q.get("objective", "") not in OBJECTIVES.get("az900", set()):
+            errs.append(f"{tag}：objective {q.get('objective')!r} 不是官方大綱的節次")
+        if not q.get("basis", "").startswith("https://learn.microsoft.com/en-us/"):
+            errs.append(f"{tag}：basis 必須是 https://learn.microsoft.com/en-us/ 的官方文件網址")
+        if not 20 <= len(q.get("basis_quote", "")) <= 400:
+            errs.append(f"{tag}：basis_quote 必須是那頁逐字摘錄的原文（20～400 字元）")
+        if not q.get("explain"):
+            errs.append(f"{tag}：缺 explain（解析）")
     out = {
         "id": qid, "cert": cert, "subject": chapter.split(".")[1] if "." in chapter else "",
         "chapter": chapter, "type": "single", "stem": stem, "options": options,
@@ -139,10 +149,13 @@ def validate(q, where, cert_ids, mode):
     for k in ("period", "qno", "page"):
         if q.get(k, "").isdigit():
             out[k] = int(q[k])
-    for k in ("law_as_of", "basis", "explain", "status"):
+    for k in ("law_as_of", "basis", "basis_quote", "objective", "explain", "status"):
         if q.get(k):
             out[k] = q[k]
     return out, errs
+
+
+OBJECTIVES = {}
 
 
 def load_certs():
@@ -150,7 +163,21 @@ def load_certs():
     ids = [c["id"] for c in data["certs"]]
     if len(ids) != len(set(ids)):
         raise BuildError(f"certs.json 的證照 id 重複：{ids}")
+    OBJECTIVES.clear()
+    for c in data["certs"]:
+        if c.get("syllabus"):
+            OBJECTIVES[c["id"]] = {o["id"] for o in c["syllabus"]["objectives"]}
     return data["certs"]
+
+
+def check_draft(certs, draft_dir: Path):
+    """草稿（還沒進 repo 的題目檔）：用公開題庫的規則檢查，不寫任何檔。"""
+    cert_ids = {c["id"] for c in certs}
+    files, qs, errs = collect(draft_dir, cert_ids, "public")
+    for q in qs:
+        if q["cert"] == "az900" and not q["source"].startswith("original-"):
+            errs.append(f"{q['id']}：AZ-900 只能收原創題")
+    return files, qs, errs
 
 
 def collect(root: Path, cert_ids, mode):
@@ -267,6 +294,20 @@ def main(argv):
     check_only = "--check" in argv
     try:
         certs = load_certs()
+        if "--draft" in argv:
+            d = Path(argv[argv.index("--draft") + 1])
+            files, qs, errs = check_draft(certs, d)
+            if not qs:
+                # 0 題不是「全部符合」：多半是目錄給錯（要給 <cert>/*.txt 的上一層）。常設規則 15。
+                print(f"DRAFT ABORT：{d} 底下沒有找到任何題目（應為 {d}/<證照>/*.txt）——0 題不能算通過")
+                return 2
+            if errs:
+                print(f"DRAFT FAILED：{len(errs)} 項")
+                for e in errs:
+                    print(f"  {e}")
+                return 1
+            print(f"DRAFT OK：{len(files)} 個檔、{len(qs)} 題，全部符合公開題庫規則（含 AZ-900 依據欄位）")
+            return 0
         runs = [("public", build_public), ("local", build_local)] if check_only else \
                ([("local", build_local)] if "--local" in argv else [("public", build_public)])
         failed = False
