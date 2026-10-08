@@ -20,6 +20,10 @@
        私人清單本身不入庫（.gitignore＋R1 雙重擋）；清單不存在時照樣跑 (a)，並在輸出註明。
     R7 題目內容：本機有匯入包（data/local/import/*.json）時，任何檔案含其中任一題的題幹（去空白後，12 字以上）就擋。
        沒有匯入包時 R7 不啟用，輸出會明寫「R7 未啟用」——那時的「通過」不代表沒有題目內容。
+    R8 不可見字元（只查暫存區）：文字檔裡的 NBSP、窄 NBSP、零寬空白／連接／不連接、word joiner、BOM、軟連字號。
+       它們在螢幕上和空白一樣，程式壞掉時看著正確的程式碼也找不出問題。點名行、欄與字元名稱。
+       不查 --history：舊 commit 裡已有（verify_basis.py 三個版本、STATUS.md 兩個版本），那是格式問題不是外洩，
+       改寫已推送的歷史要先問（STATUS 規則 9），所以只擋「新進來的」。
     --history 另外掃每個 commit 的訊息與作者／提交者名稱、email（推上去一樣公開）。
 
 用法：
@@ -47,6 +51,11 @@ for _s in (sys.stdout, sys.stderr):
         pass
 
 ROOT = Path(__file__).resolve().parents[1]
+
+# R8：看不見、或看起來跟一般空白一樣的字元（用碼位寫，這支程式自己不能含這些字元）
+INVISIBLE = {0x00A0: "NO-BREAK SPACE", 0x202F: "NARROW NO-BREAK SPACE", 0x200B: "ZERO WIDTH SPACE",
+             0x200C: "ZERO WIDTH NON-JOINER", 0x200D: "ZERO WIDTH JOINER", 0x2060: "WORD JOINER",
+             0xFEFF: "BOM / ZERO WIDTH NO-BREAK SPACE", 0x00AD: "SOFT HYPHEN"}
 
 BLOCKED_DIRS = ("refs/", "data/local/")
 PRIVATE_LIST = ".selfcheck-private.txt"
@@ -127,9 +136,29 @@ def load_stems(cwd):
     return stems, n
 
 
-def check_one(path: str, data: bytes, private=(), stems=()):
-    """回傳這個檔違反的規則清單：[(規則代號, 說明)]。"""
+def invisible_hits(data: bytes):
+    """R8：回傳 [(行, 欄, 字元名稱)]；不是 UTF-8 文字（圖示等二進位檔）就不查。"""
+    try:
+        text = data.decode("utf-8")
+    except UnicodeDecodeError:
+        return []
+    out = []
+    for ln, line in enumerate(text.split("\n"), 1):
+        for col, ch in enumerate(line, 1):
+            if ord(ch) in INVISIBLE:
+                out.append((ln, col, f"U+{ord(ch):04X} {INVISIBLE[ord(ch)]}"))
+    return out
+
+
+def check_one(path: str, data: bytes, private=(), stems=(), invisible=False):
+    """回傳這個檔違反的規則清單：[(規則代號, 說明)]。invisible=True 才查 R8（只用在暫存區）。"""
     hits = []
+    if invisible:
+        inv = invisible_hits(data)
+        if inv:
+            more = f"（共 {len(inv)} 處）" if len(inv) > 1 else ""
+            ln, col, name = inv[0]
+            hits.append(("R8", f"第 {ln} 行第 {col} 欄有不可見字元 {name}{more}"))
     low = path.lower()
     if low == PRIVATE_LIST or low.endswith("/" + PRIVATE_LIST):
         hits.append(("R1", "本機私人清單不得入庫"))
@@ -189,7 +218,7 @@ def scan_staged(cwd=ROOT):
     files = staged_files(cwd)
     for p in files:
         data = git("show", f":{p}", cwd=cwd)
-        for rule, why in check_one(p, data, private, stems):
+        for rule, why in check_one(p, data, private, stems, invisible=True):
             problems.append((rule, p, why))
     return len(files), problems
 
@@ -284,6 +313,15 @@ def selftest():
     if len(user) >= 2:
         cases.append(("本機 Windows 使用者名稱", "docs/u.md", f"作者 {user}\n".encode(), False, {"R4"}))
     fake_stem = "依" + "測試用規定" + "，下列何者為正確之處理方式？"   # 假題幹（執行時才組字串）
+    # R8 假樣本：不可見字元一律用 chr() 在執行時組出來，這支程式本身不含
+    cases += [
+        ("程式碼裡夾了 NBSP（R8）", "scripts/n.py", ("s = s.replace(\"" + chr(0xA0) + "\", \" \")\n").encode(), False, {"R8"}),
+        ("文件裡夾了零寬空白（R8）", "docs/z.md", ("看起來正常" + chr(0x200B) + "的一句話\n").encode(), False, {"R8"}),
+        ("檔頭有 BOM（R8）", "docs/bom.md", (chr(0xFEFF) + "# 標題\n").encode(), False, {"R8"}),
+        ("窄 NBSP 與軟連字號（R8）", "docs/n2.md", ("10" + chr(0x202F) + "GB soft" + chr(0xAD) + "hyphen\n").encode(), False, {"R8"}),
+        ("全形空白與一般空白、Tab 不算（R8 誤判對照）", "docs/ok.md", ("中文" + chr(0x3000) + "全形空白 a b\tc\n").encode(), False, set()),
+        ("二進位檔不查（R8 誤判對照）", "icons/x.png", b"\x89PNG\r\n\x1a\n\xc2\xa0\xff\xfe", False, set()),
+    ]
     cases += [
         ("文件裡夾了匯入包的題幹（R7）", "docs/notes.md", f"筆記：\n{fake_stem}\n".encode(), False, {"R7"}),
         ("題幹被換行拆開也要抓到（R7）", "docs/notes2.md", f"{fake_stem[:9]}\n  {fake_stem[9:]}\n".encode(), False, {"R7"}),

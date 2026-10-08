@@ -33,6 +33,22 @@ TABF 那批有官方答案卷當真值；**原創題沒有外部答案可以核�
 - 抓不到頁面、或一題都沒讀到，結束碼 2——抓不到不等於依據失效。
 - 離線測試 `scripts/test_verify_basis.py`（15 項，已加進推送閘門）。對檢查器本身做過三個突變（拿掉錨點檢查、拿掉授權檢查、整頁找不到也不報失效），測試都變紅且理由對。
 
+### 有裁量的授權判斷：entra-docs（2026-10-08，這是判斷，不是查到的事實）
+
+Entra 的頁面（條件式存取、Domain Services、MFA、External ID、Entra ID、SSO）來自公開 repo `MicrosoftDocs/entra-docs`。這個 repo 的兩份文件說法不一致：
+
+| 文件 | 內容（2026-10-08 讀取） |
+|---|---|
+| `LICENSE` | 第一行是 `MIT License`，全文是 MIT 授權（和同 repo 的 `LICENSE-CODE` 一樣是 MIT，但文字版本不同） |
+| `ThirdPartyNotices.md`（Legal Notices） | 寫明 Microsoft 與貢獻者「grant you a license to the Microsoft documentation」（授權文件內容）採 CC BY 4.0，並說「see the LICENSE file」；程式碼則採 MIT、見 `LICENSE-CODE` |
+
+**採用法律聲明（CC BY 4.0）的理由**：
+1. 法律聲明是**分開處理「文件」與「程式碼」**的那一份，而且明文指定文件內容的授權；`LICENSE` 檔沒有區分對象。
+2. 其他 MicrosoftDocs repo（azure-docs、azure-monitor-docs 等）都是 `LICENSE`＝CC BY 4.0、`LICENSE-CODE`＝MIT，法律聲明的文字相同。entra-docs 的法律聲明說「見 LICENSE 檔」，但 `LICENSE` 卻是 MIT——看起來是 `LICENSE` 檔放錯，而不是文件內容改採 MIT。
+3. **兩種讀法對本專案的結論相同**：本專案公開的只有網址、章節錨點、章節標題與原文雜湊，原文只留本機；不論內容授權是 CC BY 4.0 還是 MIT，這樣的使用都在允許範圍內。所以這個判斷錯了的後果小。
+
+**複查方式**：重讀上面兩份文件；若 Microsoft 修正了 `LICENSE`（改成 CC BY 4.0）或修改法律聲明，更新這一段。`verify_basis.py` 的授權檢查是先看 `ThirdPartyNotices.md`、再看 `LICENSE`，所以這個判斷也寫在程式裡——要改判斷就要改程式。
+
 ### 定期檢查：依據會失效
 
 ```
