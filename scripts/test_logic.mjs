@@ -75,6 +75,11 @@ check('出處：原創題沒有大綱節次 → 只有標示', L.sourceLabel({ s
 const brokenMsgs = L.validateImportPack({ format: 'certquiz-import', questions: [{ type: 'single', stem: 'x', options: ['a', 'b', 'c', 'd'], answer: 1 }, null] }, ['bic']).errors;
 check('匯入檢查：缺版本、缺證照、缺 id、缺來源、null 題目時，錯誤訊息裡沒有 null／undefined',
   brokenMsgs.length >= 4 && !brokenMsgs.some(m => BAD.test(m)), brokenMsgs.join('；'));
+// 讀書單元代號（記錄「作答前是否讀過」用）
+check('讀書單元：AZ-900 是 證照:節次#細項', L.studyKey({ cert: 'az900', objective: 'B.3', skill: 2 }) === 'az900:B.3#2');
+check('讀書單元：有主題的題目用主題', L.studyKey({ cert: 'bic', topic: '自行查核' }) === 'bic:topic:自行查核');
+check('讀書單元：沒有單元的題目回 null（不記）', L.studyKey({ cert: 'bic', subject: 'law' }) === null);
+
 // 讀書模式：依官方大綱分組
 {
   const syl = { objectives: [{ id: 'A.1', name: 'n1', domain: 'D', skills: ['s1', 's2'] }, { id: 'B.1', name: 'n2', domain: 'E', skills: ['t1'] }] };

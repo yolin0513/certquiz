@@ -256,6 +256,9 @@ async function realTest(browser, base, mon) {
   const st = await idbState(page);
   check('IndexedDB：作答 10 筆、每題彙總 10 筆（或同題合併）', st.attempts === 10 && st.progress >= 1 && st.progress <= 10, JSON.stringify(st));
   check('IndexedDB：錯題本筆數＝這一輪答錯的題數', st.mistakes === st.wrong, JSON.stringify(st));
+  const bicStudied = await page.evaluate(() => new Promise(r => { const q = indexedDB.open('certquiz'); q.onsuccess = () => {
+    const g = q.result.transaction('attempts').objectStore('attempts').getAll(); g.onsuccess = () => r(g.result.filter(x => 'studied' in x).length); }; }));
+  check('內控題（還沒有讀書單元）：作答紀錄不記 studied 欄位', bicStudied === 0, `${bicStudied} 筆有 studied`);
   check(`IndexedDB：匯入的題目 ${pack.counts.total} 題都在`, st.user === pack.counts.total, JSON.stringify(st));
   check('重複題（dupOf）沒有被出題', st.dupAnswered === 0, JSON.stringify(st));
 
@@ -588,6 +591,25 @@ async function studyTest(browser, base) {
     const page = await newPage(ctx, errors);
     await page.goto(base);
     await waitText(page, '證照題庫練習');
+    const attemptsOf = () => page.evaluate(() => new Promise(r => { const q = indexedDB.open('certquiz'); q.onsuccess = () => {
+      const g = q.result.transaction('attempts').objectStore('attempts').getAll(); g.onsuccess = () => r(g.result); }; }));
+    const answerAll = async n => {
+      for (let i = 0; i < n; i++) {
+        await page.waitForSelector('.opt:not([disabled])');
+        await page.click('.opt[data-k="1"]');
+        await page.waitForSelector('.feedback:not([hidden])');
+        await page.click('.q .btn.primary');
+      }
+      await page.waitForSelector('a.btn.primary::-p-text(再練一輪)');
+    };
+    // 還沒讀過就練 A.1 第 1 細項 → 作答紀錄 studied=false
+    const a11 = AZ.filter(x => x.objective === 'A.1' && x.skill === 1).length;
+    await page.goto(base + `#/practice?cert=az900&mode=practice&objective=A.1&skill=1&count=${a11}&order=unseen`);
+    await answerAll(a11);
+    const at1 = await attemptsOf();
+    check(`還沒讀就練：${at1.length} 筆作答紀錄都標「作答前沒讀過」（studied=false）`, at1.length === a11 && at1.every(x => x.studied === false), JSON.stringify(at1.map(x => x.studied)));
+    await page.goto(base + '#/');
+    await waitText(page, '證照題庫練習');
     const btn = await page.$('a::-p-text(讀書（依官方大綱）)');
     check('首頁：AZ-900 有「讀書（依官方大綱）」按鈕', !!btn);
     await btn.click();
@@ -642,6 +664,8 @@ async function studyTest(browser, base) {
     await page.waitForSelector('a.btn.primary::-p-text(再練一輪)');
     check(`「讀完了，練這 ${set.size} 題」：出的 ${stems.length} 題都屬於這個細項、沒有重複、練完出現結果頁`,
       stems.length === set.size && stems.every(s => set.has(s)) && new Set(stems).size === stems.length);
+    const at2 = (await attemptsOf()).slice(a11);
+    check(`讀過再練：這 ${at2.length} 筆作答紀錄都標「作答前讀過」（studied=true）`, at2.length === set.size && at2.every(x => x.studied === true), JSON.stringify(at2.map(x => x.studied)));
     check('讀書模式：沒有頁面錯誤', errors.length === 0, errors.join('；'));
   } finally {
     await ctx.close();

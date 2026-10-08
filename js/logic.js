@@ -192,6 +192,16 @@ export function basisText(q) {
 }
 
 /**
+ * 這題屬於哪一個「讀書單元」：AZ-900 是 節次#細項；內控之後依主題（topic）。沒有單元回 null。
+ * 用來記錄「作答前是否讀過這題所屬的單元」（只存在使用者手機，供將來觀察讀書模式有沒有用）。
+ */
+export function studyKey(q) {
+  if (q.objective && q.skill) return `${q.cert}:${q.objective}#${q.skill}`;
+  if (q.topic) return `${q.cert}:topic:${q.topic}`;
+  return null;
+}
+
+/**
  * 讀書模式：依官方大綱分組（節次 → 細項 → 題目）。
  * 回傳 { objectives: [{ id, name, domain, count, skills: [{ n, name, questions }] }], other: [...] }。
  * other 是對不到大綱節次或細項的題目（正常應該是 0 題；不是 0 時畫面要顯示出來，不能默默丟掉）。

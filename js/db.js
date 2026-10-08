@@ -90,11 +90,14 @@ export async function replaceUserQuestions(cert, questions) {
 }
 
 /** 一次作答：寫 attempts、更新 progress 與 mistakes，三個 store 同一筆交易 */
-export async function recordAnswer({ q, chosen, correct, mode, mistakeState }) {
+export async function recordAnswer({ q, chosen, correct, mode, mistakeState, studied }) {
   const db = await openDB();
   const tx = db.transaction(['attempts', 'progress', 'mistakes'], 'readwrite');
   const now = Date.now();
-  tx.objectStore('attempts').add({ cert: q.cert, qid: q.id, chosen, correct, mode, ts: now });
+  // studied：作答前是否讀過這題所屬的讀書單元（true／false）；題目沒有讀書單元時不記這個欄位
+  const rec = { cert: q.cert, qid: q.id, chosen, correct, mode, ts: now };
+  if (typeof studied === 'boolean') rec.studied = studied;
+  tx.objectStore('attempts').add(rec);
   const ps = tx.objectStore('progress');
   const prevReq = ps.get(q.id);
   prevReq.onsuccess = () => {

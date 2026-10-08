@@ -136,6 +136,7 @@ async function practiceView(gen, q) {
       h('section', { class: 'card' }, h('p', { text: mode === 'mistakes' ? '錯題本是空的。' : '這個條件下沒有題目。' })));
     return;
   }
+  const studiedMap = await DB.getMeta('studied', {});
   const results = [];
   let i = 0;
 
@@ -164,7 +165,8 @@ async function practiceView(gen, q) {
       next.hidden = false;
       results.push({ item, k, correct });
       const prev = await DB.get('mistakes', item.id);
-      await DB.recordAnswer({ q: item, chosen: k, correct, mode, mistakeState: L.nextMistakeState(prev, correct, mode, Date.now()) });
+      await DB.recordAnswer({ q: item, chosen: k, correct, mode, mistakeState: L.nextMistakeState(prev, correct, mode, Date.now()),
+        studied: studiedBefore(studiedMap, item) });
     }
 
     render(gen,
@@ -199,6 +201,7 @@ async function examView(gen, q) {
   const certId = q.get('cert');
   const subjectId = q.get('subject');
   const { cert, questions } = await loadPool(certId);
+  const studiedMap = await DB.getMeta('studied', {});
   const subject = cert.subjects.find(s => s.id === subjectId);
   if (!subject || !subject.exam) { render(gen, h('p', { text: '這個科目沒有模擬考設定。' })); return; }
   const ex = subject.exam;
@@ -270,7 +273,7 @@ async function examView(gen, q) {
         const k = answers.get(item.id);
         if (k === undefined) continue;
         const prev = await DB.get('mistakes', item.id);
-        await DB.recordAnswer({ q: item, chosen: k, correct: k === item.answer, mode: 'exam',
+        await DB.recordAnswer({ q: item, chosen: k, correct: k === item.answer, mode: 'exam', studied: studiedBefore(studiedMap, item),
           mistakeState: L.nextMistakeState(prev, k === item.answer, 'exam', Date.now()) });
       }
       const hist = await DB.getMeta('examHistory', []);
@@ -305,6 +308,12 @@ async function examView(gen, q) {
 }
 
 // ---------------------------------------------------------------- 讀書模式
+/** 作答前是否讀過這題所屬的讀書單元；題目沒有讀書單元時回 undefined（不記） */
+function studiedBefore(map, q) {
+  const key = L.studyKey(q);
+  return key ? Boolean(map[key]) : undefined;
+}
+
 // 先讀再練：依官方大綱（節次 → 細項）列出題目、正解、解析與依據，不必作答。
 async function studyView(gen, q) {
   const certId = q.get('cert');
@@ -337,7 +346,14 @@ async function studyView(gen, q) {
     return;
   }
 
-  // 一個細項：逐題列出
+  // 一個細項：逐題列出；記下「讀過這個單元」（第一次與最近一次的時間），作答時用來標示「作答前是否讀過」
+  const key = L.studyKey(skill.questions[0]);
+  if (key) {
+    const map = await DB.getMeta('studied', {});
+    const now = Date.now();
+    map[key] = { first: map[key]?.first ?? now, last: now };
+    await DB.setMeta('studied', map);
+  }
   const all = g.objectives.flatMap(o => o.skills.filter(k => k.questions.length).map(k => ({ o, k })));
   const at = all.findIndex(x => x.o.id === obj.id && x.k.n === skill.n);
   const link = x => x && h('a', { class: 'btn', href: `#/study?cert=${certId}&objective=${x.o.id}&skill=${x.k.n}`,
