@@ -10,7 +10,7 @@
 // puppeteer 借用 JLPT_App 已裝好的（只讀它的 node_modules，不改任何檔）；可用環境變數 PUPPETEER_FROM 指定。
 // 用法：node scripts/test_browser.mjs     結束碼：0 全部符合；1 有不符；2 驗尺失敗或前提不成立
 import { createRequire } from 'node:module';
-import { spawn } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { mkdtempSync, cpSync, rmSync, existsSync, readFileSync, writeFileSync, readdirSync, appendFileSync, mkdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
@@ -26,9 +26,22 @@ const AZ = JSON.parse(readFileSync(join(ROOT, 'data', 'q', 'az900.json'), 'utf-8
 // ---------------------------------------------------------------- 輸出只寫進檔案，畫面上不印結論（2026-10-08）
 // 「直接截命令輸出的最後一行」比「先存檔再讀」順手，這個專案因此兩次查不到失敗的是哪一項；
 // 讓結論只存在檔案裡，讀的人就非得打開檔案不可。每一行加時間戳記；線上模式另記每一次 HTTP 回應（狀態碼、大小）。
-const LOGDIR = join(ROOT, 'data', 'local', 'logs');
+// 正式／非正式執行分開放（2026-10-09，Dispatch：東西要帶得出建立者）：只有「追蹤檔與 HEAD 一致、跑的是 repo 裡這一份腳本」算正式，
+// 其他（突變改壞了追蹤中的檔、或跑副本）寫 logs/unofficial/、檔名帶 UNOFFICIAL——程式自己判斷，不靠執行的人記得加標記。
+// CERTQUIZ_LOGDIR 可指定目錄（測試用）。
+const RUN = (() => {
+  const here = fileURLToPath(import.meta.url);
+  if (here.toLowerCase() !== join(ROOT, 'scripts', 'test_browser.mjs').toLowerCase()) return { official: false, why: `跑的是腳本的副本（${here}）` };
+  const st = spawnSync('git', ['status', '--porcelain', '--untracked-files=no'], { cwd: ROOT, encoding: 'utf-8' });
+  const dirty = (st.stdout || '').split(/\r?\n/).filter(l => l.trim()).map(l => l.slice(3));
+  if (st.status !== 0) return { official: false, why: `讀不到 git 狀態（${(st.stderr || '').trim()}）` };
+  return dirty.length ? { official: false, why: `工作區有 ${dirty.length} 個追蹤檔跟 HEAD 不一樣：${dirty.slice(0, 10).join('、')}` }
+    : { official: true, why: '工作區與 HEAD 一致、跑的是 repo 裡的腳本' };
+})();
+const HEAD = (spawnSync('git', ['rev-parse', 'HEAD'], { cwd: ROOT, encoding: 'utf-8' }).stdout || '').trim().slice(0, 8);
+const LOGDIR = process.env.CERTQUIZ_LOGDIR || join(ROOT, 'data', 'local', 'logs', ...(RUN.official ? [] : ['unofficial']));
 mkdirSync(LOGDIR, { recursive: true });
-const LOG = join(LOGDIR, `test-browser-${new Date().toISOString().replace(/[-:]/g, '').replace('T', '-').slice(0, 15)}.log`);
+const LOG = join(LOGDIR, `test-browser-${new Date().toISOString().replace(/[-:]/g, '').replace('T', '-').slice(0, 15)}${RUN.official ? '' : '-UNOFFICIAL'}.log`);
 const stamp = () => { const d = new Date(); return `${d.toTimeString().slice(0, 8)}.${String(d.getMilliseconds()).padStart(3, '0')}`; };
 console.log = (...a) => appendFileSync(LOG, `${stamp()} ${a.join(' ')}\n`);
 console.error = console.log;
@@ -981,6 +994,41 @@ async function lookTest(browser, base, shotDir) {
   }
 }
 
+// ---------------------------------------------------------------- 二之九、持久保存：設定頁的三種狀態與瀏覽器的回答一致
+// 狀態不明時不能表現成安全（Dispatch 2026-10-09）。頁面載入前把 navigator.storage 換掉，造出三種情況；再跑一次不動手腳的真實情況。
+const PERSIST_LABELS = ['已受保護', '要求被拒絕', '狀態不明'];
+async function persistTest(browser, base) {
+  console.log('== 二之九、持久保存：設定頁「這台裝置的紀錄」三種狀態（瀏覽器不支援／拒絕／答應）與實際一致');
+  const scenarios = [
+    ['瀏覽器沒有這個功能', `Object.defineProperty(navigator, 'storage', { value: undefined, configurable: true });`, '狀態不明'],
+    ['查詢時出錯', `Object.defineProperty(navigator.storage, 'persisted', { value: async () => { throw new Error('x'); } });`, '狀態不明'],
+    ['要求被拒絕', `Object.defineProperty(navigator.storage, 'persisted', { value: async () => false });
+                   Object.defineProperty(navigator.storage, 'persist', { value: async () => false });`, '要求被拒絕'],
+    ['回傳不是 true（undefined）', `Object.defineProperty(navigator.storage, 'persisted', { value: async () => false });
+                   Object.defineProperty(navigator.storage, 'persist', { value: async () => undefined });`, '要求被拒絕'],
+    ['已經受保護', `Object.defineProperty(navigator.storage, 'persisted', { value: async () => true });`, '已受保護'],
+    ['真實情況（不動手腳）', null, null],
+  ];
+  for (const [name, inject, want] of scenarios) {
+    const ctx = await browser.createBrowserContext();
+    const errors = [];
+    try {
+      const page = await newPage(ctx, errors);
+      if (inject) await page.evaluateOnNewDocument(inject);
+      await gotoView(page, base + '#/settings');
+      await page.waitForSelector('#persist');
+      const card = await page.$eval('#persist', e => e.innerText);
+      const shown = PERSIST_LABELS.filter(l => card.includes(l));
+      let expect = want;
+      if (!inject) expect = (await page.evaluate(() => navigator.storage && navigator.storage.persisted ? navigator.storage.persisted() : null)) === true ? '已受保護' : (await page.evaluate(() => !(navigator.storage && navigator.storage.persist))) ? '狀態不明' : '要求被拒絕';
+      check(`持久保存（${name}）：設定頁只顯示「${expect}」${expect === '已受保護' ? '' : '，沒有任何「已受保護」字樣'}`,
+        shown.length === 1 && shown[0] === expect && errors.length === 0, `顯示 ${JSON.stringify(shown)}｜錯誤 ${errors.join('；')}`);
+    } finally {
+      await ctx.close();
+    }
+  }
+}
+
 // ---------------------------------------------------------------- 二之三、題庫檔讀不到
 // 某張證照的題庫檔讀不到時，只有那一張卡片顯示錯誤，首頁其他部分照常（2026-10-08 之前會整頁掛掉）
 async function missingBankTest(browser) {
@@ -1105,7 +1153,7 @@ async function main() {
   if (!existsSync(PACK)) { console.log('TEST-BROWSER ABORT：本機沒有匯入包（先跑 python scripts/build_data.py --local）'); return 2; }
   const liveIdx = process.argv.indexOf('--live');
   let code = 0;
-  console.log(`開始（${new Date().toISOString()}）${process.argv.slice(2).join(' ')}`);
+  console.log(`開始（${new Date().toISOString()}）${process.argv.slice(2).join(' ')}｜${RUN.official ? '正式執行' : '非正式執行'}：${RUN.why}｜HEAD ${HEAD}`);
   if (liveIdx > 0) {
     LIVE = true;
     const base = process.argv[liveIdx + 1].replace(/\/?$/, '/');
@@ -1141,6 +1189,7 @@ async function main() {
     await studyTest(browser, base);
     await importStudyTest(browser, base);
     await lookTest(browser, base, process.env.CERTQUIZ_SHOTS || '');
+    await persistTest(browser, base);
     await missingBankTest(browser);
     check(`全畫面掃描：整個測試期間所有頁面都沒有出現 null／undefined／NaN`, BAD_TEXT.length === 0,
       BAD_TEXT.slice(0, 8).map(x => `「${x.t}」@${x.where}`).join('；'));

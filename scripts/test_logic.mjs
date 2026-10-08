@@ -203,5 +203,30 @@ if (existsSync(real)) {
   console.log('• 本機沒有匯入包，略過真檔測試');
 }
 
+// 持久保存：三種狀態分開；只有嚴格的 true 才算受保護
+{
+  const fake = (persisted, persist) => ({ persisted: async () => { if (persisted instanceof Error) throw persisted; return persisted; },
+    persist: async () => { fake.calls++; return persist; } });
+  fake.calls = 0;
+  const cases = [
+    ['沒有 navigator.storage', undefined, 'unsupported'],
+    ['有 storage 但沒有 persist()', { persisted: async () => false }, 'unsupported'],
+    ['已經是持久保存（不必再要求）', fake(true, false), 'protected'],
+    ['這次要求被答應', fake(false, true), 'protected'],
+    ['要求被拒絕（false）', fake(false, false), 'denied'],
+    ['回傳不是 true（undefined）→ 當成被拒絕，不往好的方向猜', fake(false, undefined), 'denied'],
+    ['回傳字串 "true" → 也不算', fake(false, 'true'), 'denied'],
+    ['查詢時出錯 → 狀態不明', fake(new Error('boom'), true), 'unsupported'],
+  ];
+  for (const [desc, storage, want] of cases) {
+    const r = await L.requestPersistence(storage);
+    check(`持久保存：${desc} → ${want}`, r.state === want, JSON.stringify(r));
+  }
+  fake.calls = 0;
+  const already = fake(true, true);
+  await L.requestPersistence(already);
+  check('持久保存：已經受保護時不再呼叫 persist()', fake.calls === 0, `呼叫了 ${fake.calls} 次`);
+}
+
 console.log(fails ? `TEST-LOGIC FAILED：${fails} 項不符` : 'TEST-LOGIC OK：全部符合');
 process.exit(fails ? 1 : 0);

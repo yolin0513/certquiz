@@ -278,3 +278,21 @@ export function studyGroups(syllabus, questions) {
   });
   return { objectives, other: active.filter(q => !used.has(q.id)) };
 }
+
+/**
+ * 向瀏覽器要求「持久保存」（不會被自動清掉），回傳三種狀態之一（Dispatch 2026-10-09）：
+ *   protected   瀏覽器確實回答 true（已經是持久保存，或這次要求被答應）
+ *   denied      瀏覽器回答了、但不是 true——紀錄可能被自動清掉
+ *   unsupported 瀏覽器沒有這個功能，或查詢時出錯——狀態不明，不能當成安全
+ * 只有嚴格等於 true 才算受保護：回傳 undefined、字串之類的一律當成沒答應，不往好的方向猜。
+ * 依據：WebKit〈Updates to Storage Policy〉（2023-08-10）——預設盡量保留、不保證；persist() 依「是否從主畫面開啟」等條件決定給不給。
+ */
+export async function requestPersistence(storage) {
+  if (!storage || typeof storage.persist !== 'function' || typeof storage.persisted !== 'function') return { state: 'unsupported', why: '沒有這個功能' };
+  try {
+    if ((await storage.persisted()) === true) return { state: 'protected' };
+    return (await storage.persist()) === true ? { state: 'protected' } : { state: 'denied' };
+  } catch (e) {
+    return { state: 'unsupported', why: `查詢時出錯：${e && e.message ? e.message : e}` };
+  }
+}

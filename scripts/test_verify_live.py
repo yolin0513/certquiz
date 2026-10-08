@@ -74,9 +74,14 @@ def main():
         hist_tmp = site / "retries.tsv"   # 不寫進真的跨次紀錄
         hist_real = ROOT / "data" / "local" / "logs" / "verify-live-retries.tsv"
         before = hist_real.read_bytes() if hist_real.exists() else None
+        logs_real = [ROOT / "data" / "local" / "logs", ROOT / "data" / "local" / "logs" / "unofficial"]
+        listing = lambda: [sorted(x.name for x in d.iterdir()) if d.exists() else [] for d in logs_real]
+        logs_before = listing()
+        # 記錄檔也寫進測試自己的暫存目錄：成功失敗都不會留在任何一個正式目錄
         r = subprocess.run([sys.executable, "-I", str(ROOT / "scripts" / "verify_live.py"), base], capture_output=True,
-                           env={**os.environ, "VERIFY_LIVE_HISTORY": str(hist_tmp)})
+                           env={**os.environ, "VERIFY_LIVE_HISTORY": str(hist_tmp), "CERTQUIZ_LOGDIR": str(site / "logs")})
         after = hist_real.read_bytes() if hist_real.exists() else None
+        logs_after = listing()
         screen = r.stdout.decode("utf-8", "replace").strip().splitlines()
         m = re.search(r"寫在 (\S+\.log)", screen[0]) if len(screen) == 1 else None
         log = Path(m.group(1)) if m else None
@@ -85,11 +90,9 @@ def main():
         ok = (len(screen) == 1 and m is not None and not re.search(r"VERIFY-LIVE (OK|FAILED|ABORT)", r.stdout.decode("utf-8", "replace"))
               and r.returncode == 1 and "VERIFY-LIVE FAILED" in last[0] and re.search(r"· HTTP 200 \d+B \d+ms", body)
               and re.search(r"· HTTP 404 \d+B \d+ms", body))
-        ok = ok and before == after and hist_tmp.exists()
+        ok = ok and before == after and hist_tmp.exists() and logs_before == logs_after and log is not None and site in log.parents
         print(f"{'✓' if ok else '✗'} C 輸出規約：畫面 {len(screen)} 行、不含結論；結論只在記錄檔最後一行（{last[0][13:60]}）；記錄檔有每次 HTTP 的狀態碼與大小；結束碼 {r.returncode}")
         fails += 0 if ok else 1
-        if log and log.exists():
-            log.unlink()
 
         # D～H 5xx 重試：只對 5xx、最多 1 次、仍失敗就紅；4xx 與內容不符不重試；重試檔數超過門檻＝線上不穩
         hits = {}

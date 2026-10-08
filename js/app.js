@@ -500,6 +500,23 @@ async function statsView(gen, q) {
 }
 
 // ---------------------------------------------------------------- 設定：匯入題目
+// 這台裝置的紀錄會不會被瀏覽器自動清掉：三種狀態分開寫，狀態不明時不能表現成安全
+function persistCard(s) {
+  const home = 'iPhone 請把這個網站加到主畫面（Safari 的「分享」→「加入主畫面」），之後都從主畫面打開；加到主畫面後，下次打開會再要求一次。';
+  const body = {
+    protected: [h('p', { class: 'ok', text: '已受保護' }),
+      h('p', { text: '瀏覽器答應不會自動清掉這台裝置上的作答紀錄、錯題與匯入的題目。' }),
+      h('p', { class: 'muted', text: '你自己清除瀏覽器資料、或刪掉主畫面上的 App 時，紀錄還是會不見。' })],
+    denied: [h('p', { class: 'ng', text: '要求被拒絕' }),
+      h('p', { text: '瀏覽器沒有答應保護。這台裝置上的作答紀錄、錯題與匯入的題目可能被自動清掉，而且被清掉時 App 不會知道。' }),
+      h('p', { text: home })],
+    unsupported: [h('p', { class: 'ng', text: '狀態不明' }),
+      h('p', { text: `這個瀏覽器${s.why && s.why.startsWith('查詢') ? '在查詢時出錯' : '不支援查詢這件事'}，App 無法確認紀錄會不會被自動清掉。請不要假設它是安全的。` }),
+      h('p', { text: home })],
+  }[s.state];
+  return h('section', { class: 'card', id: 'persist' }, h('h2', { text: '這台裝置的紀錄' }), ...body);
+}
+
 async function settingsView(gen) {
   const m = await loadManifest();
   const knownCerts = m.certs.map(c => c.id);
@@ -540,6 +557,7 @@ async function settingsView(gen) {
       h('p', { text: '選擇電腦產生的匯入包（例如 bic-匯入包.json）。題目只存在這支手機的瀏覽器裡，不會上傳到任何地方。' }),
       counts.length ? h('ul', {}, counts) : h('p', { class: 'muted', text: '目前沒有匯入的題目。' }),
       input, status),
+    persistCard(await storagePromise),
     h('section', { class: 'card' }, h('h2', { text: '關於' }),
       h('p', { text: '這個網站只有練習功能。作答紀錄、錯題、匯入的題目都只存在你這支手機的瀏覽器裡；網站不收集任何資料。' }),
       h('p', { class: 'muted', text: '換手機或清除瀏覽器資料後，要重新匯入題目。' })));
@@ -564,6 +582,8 @@ async function route() {
   }
 }
 
+// 啟動時就向瀏覽器要求持久保存（不會跳出提示；設定頁顯示結果）。資料被自動清掉時 App 偵測不到，所以要讓他看得到狀態。
+const storagePromise = L.requestPersistence(navigator.storage);
 window.addEventListener('hashchange', route);
 route();
 

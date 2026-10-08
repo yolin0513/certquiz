@@ -23,6 +23,12 @@
   - 記錄檔記下「首次 5xx、重試結果」，總結行註明本次重試了幾個檔。
   - 重試次數是訊號，不是雜訊：本次重試超過 MAX_RETRY_FILES 個檔、或連續 CONSEC_RUNS 次執行都有重試，就判紅，並寫明「線上不穩，不是內容不符」。
     跨次的紀錄存在 data/local/logs/verify-live-retries.tsv。
+
+**正式／非正式執行分開放（2026-10-09，Dispatch：東西要帶得出建立者）**：
+  只有「工作區的追蹤檔跟 HEAD 一致、而且跑的是 repo 裡這一份腳本」才算正式執行，記錄寫 data/local/logs/，跨次重試紀錄也只有它寫。
+  其他（突變——改壞了追蹤中的檔；或跑的是腳本的副本）一律寫 data/local/logs/unofficial/，檔名帶 UNOFFICIAL、跨次紀錄另一份。
+  這是程式自己判斷的，不靠執行的人記得加標記。記錄檔開頭寫明 HEAD、正式與否、哪些追蹤檔跟 HEAD 不一樣。
+  CERTQUIZ_LOGDIR 環境變數可以指定記錄目錄（測試用：測試跑出來的記錄不該出現在任何一個正式目錄）。
 """
 import json
 import re
@@ -50,6 +56,18 @@ LOGDIR = ROOT / "data" / "local" / "logs"
 # 每次執行一列：時間、HEAD、重試的檔數。測試要用環境變數改到暫存檔——測試的「0 次重試」寫進真的紀錄，會把連續重試的訊號打斷
 import os  # noqa: E402
 HISTORY = Path(os.environ.get("VERIFY_LIVE_HISTORY") or LOGDIR / "verify-live-retries.tsv")
+
+
+def run_kind():
+    """(正式與否, 說明)。正式＝追蹤檔與 HEAD 一致、而且跑的是 repo 裡這一份腳本。"""
+    here = Path(__file__).resolve()
+    if here != (ROOT / "scripts" / "verify_live.py").resolve():
+        return False, f"跑的是腳本的副本（{here}），不是 repo 裡那一份"
+    dirty = subprocess.run(["git", "status", "--porcelain", "--untracked-files=no"], cwd=ROOT, capture_output=True, text=True).stdout.split("\n")
+    dirty = [l[3:] for l in dirty if l.strip()]
+    if dirty:
+        return False, f"工作區有 {len(dirty)} 個追蹤檔跟 HEAD 不一樣：{'、'.join(dirty[:10])}"
+    return True, "工作區與 HEAD 一致、跑的是 repo 裡的腳本"
 RETRY_WAIT = 2.0
 MAX_RETRY_FILES = 3    # 單次執行重試超過這麼多個檔＝線上不穩
 CONSEC_RUNS = 3        # 連續這麼多次執行都有重試＝線上不穩
@@ -137,15 +155,24 @@ def main():
     if len(sys.argv) < 2:
         print(__doc__)
         return 2
-    LOGDIR.mkdir(parents=True, exist_ok=True)
-    path = LOGDIR / f"verify-live-{datetime.now(timezone.utc).strftime('%Y%m%d-%H%M%S')}.log"
+    global HISTORY
+    official, why = run_kind()
+    stamp = datetime.now(timezone.utc).strftime('%Y%m%d-%H%M%S')
+    if os.environ.get("CERTQUIZ_LOGDIR"):
+        logdir = Path(os.environ["CERTQUIZ_LOGDIR"])
+    else:
+        logdir = LOGDIR if official else LOGDIR / "unofficial"
+    if not official and not os.environ.get("VERIFY_LIVE_HISTORY"):
+        HISTORY = LOGDIR / "unofficial" / "verify-live-retries-UNOFFICIAL.tsv"   # 非正式執行不得寫進正式的跨次紀錄
+    logdir.mkdir(parents=True, exist_ok=True)
+    path = logdir / f"verify-live-{stamp}{'' if official else '-UNOFFICIAL'}.log"
     screen = sys.stdout
     screen.write(f"VERIFY-LIVE：完整輸出與結論都寫在 {path}（畫面不印結論；結束碼 0＝全部符合、1＝有不符、2＝中止）\n")
     screen.flush()
     with path.open("w", encoding="utf-8") as f:
         sys.stdout = sys.stderr = f
         try:
-            out(f"開始（UTC {datetime.now(timezone.utc).isoformat(timespec='seconds')}）")
+            out(f"開始（UTC {datetime.now(timezone.utc).isoformat(timespec='seconds')}）｜{'正式執行' if official else '非正式執行'}：{why}｜HEAD {git('rev-parse', 'HEAD').decode().strip()[:8]}｜跨次重試紀錄：{HISTORY}")
             return run()
         except Exception:
             out("VERIFY-LIVE ABORT：程式例外\n" + traceback.format_exc())
