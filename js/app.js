@@ -409,10 +409,12 @@ async function importStudyView(gen, q, cert, questions) {
   if (view === 'points') {
     const list = L.pointList(await DB.getMeta(`points:${certId}`, []), questions);
     const covered = list.reduce((t, x) => t + x.ids.length, 0);
+    const n = list.length;
     const notice = () => h('section', { class: 'card warn' },
       h('h3', { text: '這不是考試範圍——只列出「證明得了」的反覆考點' }),
       h('p', { text: '這裡只放不同期之間，題幹與正解逐字相同、或高度相似的題目。改寫幅度較大的同一個考點，程式比對不出來，會被漏掉。' }),
       h('p', { text: '所以：沒出現在這份清單上，不代表那個考點不常考。這份清單是「先讀哪些」的參考，不是全部要讀的範圍；其餘題目請用「依科目與期別瀏覽」讀。' }),
+      h('p', { text: `另外，這 ${n} 個考點是用「相似度」找出來的，量的是「題目寫法重複」，不等於「這條規定重要」：一條規定如果每次換不同問法考，反而不會出現在這份清單上。` }),
       h('p', { class: 'muted', text: '題目沒有官方解析，這裡只列題目與官方答案卷的正解。' }));
     if (!list.length) {
       render(gen, home, tabs, notice(),
