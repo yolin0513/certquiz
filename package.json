@@ -4,6 +4,6 @@
   "type": "module",
   "description": "證照題庫練習 PWA（無框架、無打包；只用 node 跑測試）",
   "scripts": {
-    "test": "node scripts/test_logic.mjs && python -I scripts/test_build_data.py && python -I scripts/check_privacy.py --selftest && python -I scripts/selfcheck.py --selftest"
+    "test": "node scripts/test_logic.mjs && python -I scripts/test_build_data.py && python -I scripts/check_privacy.py --selftest && python -I scripts/selfcheck.py --selftest && python -I scripts/test_verify_live.py"
   }
 }

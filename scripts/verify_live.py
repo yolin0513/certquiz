@@ -56,6 +56,21 @@ def fetch(url):
         return e.code, b""
 
 
+def compare_files(base, files, local_bytes):
+    """逐一抓線上的檔跟本機內容比。回傳 (實際比對過的路徑清單, 不一致清單, {路徑: 線上內容})。
+    「實際比對過」要回報出來，呼叫端核對數量——不能讓某個路徑（例如中文檔名）被靜默跳過還回報全部通過。
+    守這件事的測試：scripts/test_verify_live.py。"""
+    compared, mismatch, online = [], [], {}
+    for f in files:
+        st, body = fetch(base + f)
+        local = local_bytes(f)
+        online[f] = body
+        compared.append(f)
+        if st != 200 or body != local:
+            mismatch.append(f"{f}（HTTP {st}，線上 {len(body)} B／本機 {len(local)} B）")
+    return compared, mismatch, online
+
+
 def git(*a):
     return subprocess.run(["git", *a], cwd=ROOT, capture_output=True, check=True).stdout
 
@@ -92,14 +107,10 @@ def main():
     check("V1 線上首頁帶著 CSP（connect-src 'self'）", "connect-src 'self'" in text)
 
     # ---- V2 每一個追蹤中的檔逐位元組相同；同時收集內容給 V4
-    mismatch, online = [], {}
-    for f in files:
-        st, body = fetch(base + f)
-        local = git("show", f"HEAD:{f}")
-        online[f] = body
-        if st != 200 or body != local:
-            mismatch.append(f"{f}（HTTP {st}，線上 {len(body)} B／本機 {len(local)} B）")
-    check(f"V2 線上 {len(files)} 個檔與本機 HEAD {head[:8]} 逐位元組相同", not mismatch, "；".join(mismatch[:5]))
+    compared, mismatch, online = compare_files(base, files, lambda f: git("show", f"HEAD:{f}"))
+    skipped = sorted(set(files) - set(compared))
+    check(f"V2 線上 {len(compared)}／{len(files)} 個檔與本機 HEAD {head[:8]} 逐位元組相同（比對數＝追蹤檔數，沒有跳過）",
+          not mismatch and not skipped, "；".join(mismatch[:5] + [f"沒比對到：{s}" for s in skipped[:5]]))
 
     # ---- V3 本機專用路徑線上都是 404
     local_only = ["data/local/import/bic-匯入包.json", "data/local/src/bic/tabf-p49-law.txt", "data/local/抽檢/claude_核對.md",
