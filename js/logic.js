@@ -83,6 +83,8 @@ export function pickQuestions(pool, opts, progress = new Map()) {
   if (opts.subject && opts.subject !== 'all') qs = qs.filter(q => q.subject === opts.subject);
   if (opts.source === 'official') qs = qs.filter(q => q.source === 'tabf-official');
   if (opts.source === 'user') qs = qs.filter(q => q.source === 'user-import');
+  if (opts.objective) qs = qs.filter(q => q.objective === opts.objective);
+  if (opts.skill) qs = qs.filter(q => String(q.skill) === String(opts.skill));
   let ordered;
   if (opts.order === 'unseen') {
     const unseen = shuffle(qs.filter(q => !(progress.get(q.id)?.seen > 0)), rand);
@@ -187,4 +189,24 @@ export function basisText(q) {
   const anchor = q.basis_anchor && q.basis_anchor !== '#' ? q.basis_anchor : '';
   const section = anchor && q.basis_section ? `（章節：${q.basis_section}）` : '';
   return `依據（官方文件）：${q.basis}${anchor}${section}`;
+}
+
+/**
+ * 讀書模式：依官方大綱分組（節次 → 細項 → 題目）。
+ * 回傳 { objectives: [{ id, name, domain, count, skills: [{ n, name, questions }] }], other: [...] }。
+ * other 是對不到大綱節次或細項的題目（正常應該是 0 題；不是 0 時畫面要顯示出來，不能默默丟掉）。
+ */
+export function studyGroups(syllabus, questions) {
+  const active = questions.filter(isActive);
+  const used = new Set();
+  const objectives = (syllabus?.objectives || []).map(o => {
+    const skills = (o.skills || []).map((name, i) => {
+      const qs = active.filter(q => q.objective === o.id && String(q.skill) === String(i + 1))
+        .sort((a, b) => a.id.localeCompare(b.id));
+      qs.forEach(q => used.add(q.id));
+      return { n: i + 1, name, questions: qs };
+    });
+    return { id: o.id, name: o.name, domain: o.domain, count: skills.reduce((t, k) => t + k.questions.length, 0), skills };
+  });
+  return { objectives, other: active.filter(q => !used.has(q.id)) };
 }

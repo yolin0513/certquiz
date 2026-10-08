@@ -81,7 +81,8 @@ async function homeView(gen) {
         h('p', { class: 'stat' }, `可練 ${active.length} 題`, questions.length !== active.length ? `（另有重複題 ${questions.length - active.length} 題已隱藏）` : ''),
         h('p', { class: 'stat' }, `已作答 ${s.answered} 次，答對率 ${s.answered ? pct(s.rate) : '—'}，錯題 ${mistakes.length} 題`),
         h('div', { class: 'row' },
-          h('a', { class: 'btn primary', href: `#/setup?cert=${c.id}`, text: '開始練習' }),
+          c.syllabus ? h('a', { class: 'btn primary', href: `#/study?cert=${c.id}`, text: '讀書（依官方大綱）' }) : null,
+          h('a', { class: c.syllabus ? 'btn' : 'btn primary', href: `#/setup?cert=${c.id}`, text: '開始練習' }),
           h('a', { class: 'btn', href: `#/practice?cert=${c.id}&mode=mistakes&count=20`, 'aria-disabled': mistakes.length ? null : 'true', text: `錯題複習（${mistakes.length}）` })),
         h('div', { class: 'row' },
           c.subjects.filter(s => s.exam).map(s => h('a', { class: 'btn', href: `#/exam?cert=${c.id}&subject=${s.id}`,
@@ -127,7 +128,8 @@ async function practiceView(gen, q) {
   } else {
     const prog = new Map((await DB.getAll('progress', certId)).map(p => [p.qid, p]));
     picked = L.pickQuestions(questions, { subject: q.get('subject') || 'all', source: q.get('source') || 'all',
-      count: Number(q.get('count')) || 10, order: q.get('order') || 'unseen' }, prog);
+      count: Number(q.get('count')) || 10, order: q.get('order') || 'unseen',
+      objective: q.get('objective') || '', skill: q.get('skill') || '' }, prog);
   }
   if (!picked.length) {
     render(gen, h('a', { class: 'back', href: '#/', text: '← 回首頁' }),
@@ -302,6 +304,66 @@ async function examView(gen, q) {
   }
 }
 
+// ---------------------------------------------------------------- 讀書模式
+// 先讀再練：依官方大綱（節次 → 細項）列出題目、正解、解析與依據，不必作答。
+async function studyView(gen, q) {
+  const certId = q.get('cert');
+  const { cert, questions } = await loadPool(certId);
+  const back = h('a', { class: 'back', href: '#/', text: '← 回首頁' });
+  if (!cert.syllabus) {
+    render(gen, back, h('section', { class: 'card' }, h('p', { text: '這張證照的讀書模式還在準備中。' })));
+    return;
+  }
+  const g = L.studyGroups(cert.syllabus, questions);
+  const objId = q.get('objective');
+  const skillN = Number(q.get('skill'));
+  const obj = g.objectives.find(o => o.id === objId);
+  const skill = obj && obj.skills.find(k => k.n === skillN);
+
+  if (!skill) {
+    // 大綱目錄：依領域分段，每個細項一個連結，附題數
+    const domains = [...new Set(g.objectives.map(o => o.domain))];
+    render(gen, back,
+      h('section', { class: 'card' }, h('h2', { text: `${cert.short} 讀書：依官方大綱` }),
+        h('p', { class: 'muted', text: `${cert.syllabus.version}。細項名稱是官方原文；點進去可以看題目、正解、解析與依據，看完再練那一節。` })),
+      domains.map(d => h('section', { class: 'card' }, h('h3', { text: d }),
+        g.objectives.filter(o => o.domain === d).map(o => h('div', { class: 'study-obj' },
+          h('p', { class: 'stat' }, h('b', { text: `${o.id} ${o.name}` }), `（${o.count} 題）`),
+          h('ol', { class: 'study-skills' }, o.skills.map(k => h('li', {},
+            k.questions.length
+              ? h('a', { href: `#/study?cert=${certId}&objective=${o.id}&skill=${k.n}`, text: `${k.name}（${k.questions.length} 題）` })
+              : h('span', { class: 'muted', text: k.name })))))))),
+      g.other.length ? h('section', { class: 'card' }, h('p', { class: 'ng', text: `有 ${g.other.length} 題對不到大綱節次，請回報。` })) : null);
+    return;
+  }
+
+  // 一個細項：逐題列出
+  const all = g.objectives.flatMap(o => o.skills.filter(k => k.questions.length).map(k => ({ o, k })));
+  const at = all.findIndex(x => x.o.id === obj.id && x.k.n === skill.n);
+  const link = x => x && h('a', { class: 'btn', href: `#/study?cert=${certId}&objective=${x.o.id}&skill=${x.k.n}`,
+    text: at > all.indexOf(x) ? '← 上一個細項' : '下一個細項 →' });
+  const n = skill.questions.length;
+  render(gen,
+    h('a', { class: 'back', href: `#/study?cert=${certId}`, text: '← 回大綱' }),
+    h('section', { class: 'card' },
+      h('p', { class: 'muted', text: `${obj.id} ${obj.name}` }),
+      h('h2', { text: `第 ${skill.n} 細項：${skill.name}` }),
+      h('p', { class: 'muted', text: `${n} 題。正解以綠色標出；解析指回官方文件。` })),
+    skill.questions.map((x, i) => h('section', { class: 'card study-q' },
+      h('p', { class: 'muted', text: `${i + 1}／${n}` }),
+      h('p', { class: 'stem', text: x.stem }),
+      h('ol', { class: 'study-opts' }, x.options.map((t, k) => h('li', { class: k + 1 === x.answer ? 'right' : null },
+        h('span', { text: t }), k + 1 === x.answer ? h('b', { text: '（正解）' }) : null))),
+      x.explain ? h('p', { class: 'explain', text: x.explain }) : null,
+      x.basis ? h('p', { class: 'src basis', text: L.basisText(x) }) : null,
+      h('p', { class: 'src', text: L.sourceLabel(x) }))),
+    h('section', { class: 'card' },
+      h('div', { class: 'row' },
+        h('a', { class: 'btn primary', href: `#/practice?cert=${certId}&mode=practice&objective=${obj.id}&skill=${skill.n}&count=${n}&order=unseen`,
+          text: `讀完了，練這 ${n} 題` })),
+      h('div', { class: 'row' }, link(all[at - 1]), link(all[at + 1]))));
+}
+
 // ---------------------------------------------------------------- 統計
 async function statsView(gen, q) {
   const certId = q.get('cert');
@@ -385,6 +447,7 @@ async function route() {
     else if (path === '/practice') await practiceView(gen, q);
     else if (path === '/exam') await examView(gen, q);
     else if (path === '/stats') await statsView(gen, q);
+    else if (path === '/study') await studyView(gen, q);
     else if (path === '/settings') await settingsView(gen);
     else go('#/');
   } catch (e) {

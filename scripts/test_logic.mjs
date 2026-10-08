@@ -75,6 +75,32 @@ check('出處：原創題沒有大綱節次 → 只有標示', L.sourceLabel({ s
 const brokenMsgs = L.validateImportPack({ format: 'certquiz-import', questions: [{ type: 'single', stem: 'x', options: ['a', 'b', 'c', 'd'], answer: 1 }, null] }, ['bic']).errors;
 check('匯入檢查：缺版本、缺證照、缺 id、缺來源、null 題目時，錯誤訊息裡沒有 null／undefined',
   brokenMsgs.length >= 4 && !brokenMsgs.some(m => BAD.test(m)), brokenMsgs.join('；'));
+// 讀書模式：依官方大綱分組
+{
+  const syl = { objectives: [{ id: 'A.1', name: 'n1', domain: 'D', skills: ['s1', 's2'] }, { id: 'B.1', name: 'n2', domain: 'E', skills: ['t1'] }] };
+  const mk = (id, objective, skill, extra = {}) => ({ id, objective, skill, source: 'original-ai', ...extra });
+  const g = L.studyGroups(syl, [mk('az900-a1-002', 'A.1', 1), mk('az900-a1-001', 'A.1', 1), mk('az900-a1-003', 'A.1', 2),
+    mk('az900-b1-001', 'B.1', 1), mk('az900-z9-001', 'Z.9', 1), mk('az900-a1-004', 'A.1', 1, { status: 'retired' })]);
+  check('讀書分組：題目歸到對的節次與細項、細項內依 id 排序', g.objectives[0].skills[0].questions.map(q => q.id).join() === 'az900-a1-001,az900-a1-002' &&
+    g.objectives[0].skills[1].questions.length === 1 && g.objectives[0].count === 3 && g.objectives[1].count === 1);
+  check('讀書分組：對不到大綱的題目放進 other（不默默丟掉）', g.other.length === 1 && g.other[0].id === 'az900-z9-001');
+  check('讀書分組：停用（retired）的題目不出現', !JSON.stringify(g).includes('az900-a1-004'));
+  const pool = [mk('az900-a1-001', 'A.1', 1), mk('az900-a1-003', 'A.1', 2), mk('az900-b1-001', 'B.1', 1)];
+  const p1 = L.pickQuestions(pool, { count: 10, objective: 'A.1', skill: '2', seed: 1 });
+  check('選題：只出指定節次與細項', p1.length === 1 && p1[0].id === 'az900-a1-003');
+  check('選題：沒指定節次時照舊全部', L.pickQuestions(pool, { count: 10, seed: 1 }).length === 3);
+  const root = join(dirname(fileURLToPath(import.meta.url)), '..');
+  const man = JSON.parse(readFileSync(join(root, 'data', 'manifest.json'), 'utf-8'));
+  const az = man.certs.find(c => c.id === 'az900');
+  const real = JSON.parse(readFileSync(join(root, 'data', 'q', 'az900.json'), 'utf-8')).questions;
+  const rg = L.studyGroups(az.syllabus, real);
+  const total = rg.objectives.reduce((t, o) => t + o.count, 0);
+  check(`讀書分組（真題庫）：${real.length} 題全部歸進大綱、沒有對不到的`, total === real.length && rg.other.length === 0, `歸進 ${total}、對不到 ${rg.other.length}`);
+  check('讀書分組（真題庫）：每個節次題數＝配額、57 個細項都至少 1 題',
+    rg.objectives.every((o, i) => o.count === az.syllabus.objectives[i].quota) && rg.objectives.flatMap(o => o.skills).every(k => k.questions.length > 0) &&
+    rg.objectives.flatMap(o => o.skills).length === 57);
+}
+
 // 靜態檢查：app.js 只有 fill() 與 render() 兩處直接呼叫原生 replaceChildren（其他地方傳 null 會被印成 "null"）
 const appSrc = readFileSync(join(dirname(fileURLToPath(import.meta.url)), '..', 'js', 'app.js'), 'utf-8');
 const rc = appSrc.split('\n').filter(l => /\.replaceChildren\(/.test(l) && !l.trim().startsWith('//'));

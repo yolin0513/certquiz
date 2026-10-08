@@ -55,3 +55,11 @@ table { width: 100%; border-collapse: collapse; font-size: .95rem; }
 th, td { text-align: left; padding: 6px 4px; border-bottom: 1px solid var(--line); }
 .wronglist { padding-left: 1.2em; }
 .wronglist li { margin-bottom: 12px; }
+/* 讀書模式 */
+.study-obj { margin: 0 0 12px; }
+.study-skills { margin: 4px 0 0; padding-left: 1.4em; }
+.study-skills li { margin: 4px 0; overflow-wrap: anywhere; }
+.study-opts { margin: 8px 0; padding-left: 1.6em; }
+.study-opts li { margin: 4px 0; padding: 4px 6px; border-radius: 6px; }
+.study-opts li.right { background: var(--ok-bg); border: 1px solid var(--ok); }
+.study-q .stem { margin-top: 0; }

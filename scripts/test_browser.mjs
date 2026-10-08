@@ -24,9 +24,10 @@ const PUBLIC = ['index.html', 'sw.js', 'manifest.webmanifest', 'css', 'js', 'ico
 const AZ = JSON.parse(readFileSync(join(ROOT, 'data', 'q', 'az900.json'), 'utf-8')).questions;
 
 let fails = 0;
+const failed = [];   // 總結行要列出是哪幾項不符（2026-10-08：有一次只截到部分輸出，無從得知是哪一項失敗）
 const check = (desc, ok, detail = '') => {
   console.log(`${ok ? '✓' : '✗'} ${desc}${ok ? '' : '：' + detail}`);
-  if (!ok) fails++;
+  if (!ok) { fails++; failed.push(desc); }
   return ok;
 };
 
@@ -578,6 +579,75 @@ async function minimalTest(browser, base) {
   }
 }
 
+// ---------------------------------------------------------------- 二之六、讀書模式（AZ-900 依官方大綱）
+async function studyTest(browser, base) {
+  console.log('== 二之六、讀書模式：AZ-900 依官方大綱逐細項讀，再練那一節');
+  const ctx = await browser.createBrowserContext();
+  const errors = [];
+  try {
+    const page = await newPage(ctx, errors);
+    await page.goto(base);
+    await waitText(page, '證照題庫練習');
+    const btn = await page.$('a::-p-text(讀書（依官方大綱）)');
+    check('首頁：AZ-900 有「讀書（依官方大綱）」按鈕', !!btn);
+    await btn.click();
+    await waitText(page, '讀書：依官方大綱');
+    const links = await page.$$eval('.study-skills a', as => as.map(a => ({ href: a.getAttribute('href'), t: a.textContent })));
+    const sum = links.reduce((t, l) => t + Number((l.t.match(/（(\d+) 題）$/) || [0, 0])[1]), 0);
+    check(`大綱目錄：57 個細項都有連結、題數加總 ${sum}＝${AZ.length}`, links.length === 57 && sum === AZ.length, `${links.length} 個連結`);
+    // 逐一打開每個細項
+    let cards = 0, badCards = [];
+    for (const l of links) {
+      const u = new URLSearchParams(l.href.split('?')[1]);
+      const want = AZ.filter(x => x.objective === u.get('objective') && String(x.skill) === u.get('skill'));
+      await page.goto(base + l.href);
+      await page.waitForSelector('.study-q');
+      const got = await page.$$eval('.study-q', cs => cs.map(c => ({
+        stem: c.querySelector('.stem').textContent,
+        right: [...c.querySelectorAll('.study-opts li.right')].map(li => li.textContent),
+        explain: !!c.querySelector('.explain'), basis: (c.querySelector('.basis') || {}).textContent || '',
+        links: c.querySelectorAll('a').length })));
+      cards += got.length;
+      if (got.length !== want.length) badCards.push(`${l.href}：${got.length} 題，應 ${want.length}`);
+      for (const c of got) {
+        const qq = want.find(x => x.stem === c.stem);
+        if (!qq) { badCards.push(`${l.href}：多出不屬於這個細項的題`); continue; }
+        if (c.right.length !== 1 || c.right[0] !== qq.options[qq.answer - 1] + '（正解）') badCards.push(`${qq.id}：正解標示 ${JSON.stringify(c.right)}`);
+        if (!c.explain || !c.basis.includes(qq.basis) || c.links) badCards.push(`${qq.id}：解析／依據／連結不對`);
+      }
+    }
+    check(`57 個細項逐一打開：共 ${cards} 題，每題只標一個正解且與題庫一致、有解析與依據、卡片內沒有連結`,
+      cards === AZ.length && badCards.length === 0, badCards.slice(0, 5).join('；'));
+    // 手機寬度：題數最多的細項
+    await page.setViewport({ width: 375, height: 800 });
+    await page.goto(base + links.reduce((a, b) => (Number(b.t.match(/（(\d+) 題）$/)[1]) > Number(a.t.match(/（(\d+) 題）$/)[1]) ? b : a)).href);
+    await page.waitForSelector('.study-q');
+    const wide = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
+    check('手機寬度 375px：讀書頁沒有橫向捲動', wide <= 1, `超出 ${wide}px`);
+    await page.setViewport({ width: 1200, height: 900 });
+    // 讀完練這一節
+    const l0 = links[0];
+    const u0 = new URLSearchParams(l0.href.split('?')[1]);
+    const set = new Set(AZ.filter(x => x.objective === u0.get('objective') && String(x.skill) === u0.get('skill')).map(x => x.stem));
+    await page.goto(base + l0.href);
+    await (await page.waitForSelector('a.btn.primary::-p-text(讀完了，練這)')).click();
+    const stems = [];
+    for (let n = 0; n < set.size; n++) {
+      await page.waitForSelector('.opt:not([disabled])');
+      stems.push(await page.$eval('.stem', e => e.textContent));
+      await page.click('.opt[data-k="1"]');
+      await page.waitForSelector('.feedback:not([hidden])');
+      await page.click('.q .btn.primary');
+    }
+    await page.waitForSelector('a.btn.primary::-p-text(再練一輪)');
+    check(`「讀完了，練這 ${set.size} 題」：出的 ${stems.length} 題都屬於這個細項、沒有重複、練完出現結果頁`,
+      stems.length === set.size && stems.every(s => set.has(s)) && new Set(stems).size === stems.length);
+    check('讀書模式：沒有頁面錯誤', errors.length === 0, errors.join('；'));
+  } finally {
+    await ctx.close();
+  }
+}
+
 // ---------------------------------------------------------------- 二之三、題庫檔讀不到
 // 某張證照的題庫檔讀不到時，只有那一張卡片顯示錯誤，首頁其他部分照常（2026-10-08 之前會整頁掛掉）
 async function missingBankTest(browser) {
@@ -709,7 +779,7 @@ async function main() {
       const left = await leftovers([`certquiz-profile-${process.pid}-`]);
       if (left.length) { console.log(`✗ 暫存目錄沒清掉：${left.join('、')}`); code = 1; }
     }
-    console.log(code ? `TEST-BROWSER FAILED：${fails} 項不符` : 'TEST-BROWSER OK（線上）：驗尺 5 項＋關掉再開全部符合');
+    console.log(code ? `TEST-BROWSER FAILED：${fails} 項不符${failed.length ? '（' + failed.join('｜') + '）' : '（暫存目錄沒清掉）'}` : 'TEST-BROWSER OK（線上）：驗尺 5 項＋關掉再開全部符合');
     return code;
   }
   const site = makeSite();
@@ -731,6 +801,7 @@ async function main() {
     }
     await swInstallTest(browser);
     await minimalTest(browser, base);
+    await studyTest(browser, base);
     await missingBankTest(browser);
     check(`全畫面掃描：整個測試期間所有頁面都沒有出現 null／undefined／NaN`, BAD_TEXT.length === 0,
       BAD_TEXT.slice(0, 8).map(x => `「${x.t}」@${x.where}`).join('；'));
@@ -743,7 +814,7 @@ async function main() {
     const left = await leftovers([`certquiz-site-${process.pid}-`, `certquiz-chrome-${process.pid}-`]);
     if (left.length) { console.log(`✗ 暫存目錄沒清掉：${left.join('、')}`); code = 1; }
   }
-  console.log(code ? `TEST-BROWSER FAILED：${fails} 項不符` : 'TEST-BROWSER OK：驗尺 5 項＋實測＋端到端突變全部符合');
+  console.log(code ? `TEST-BROWSER FAILED：${fails} 項不符${failed.length ? '（' + failed.join('｜') + '）' : '（暫存目錄沒清掉）'}` : 'TEST-BROWSER OK：驗尺 5 項＋實測＋端到端突變全部符合');
   return code;
 }
 
