@@ -33,6 +33,7 @@ sys.path.insert(0, str(ROOT / "scripts"))
 import selfcheck as S  # noqa: E402
 
 fails = 0
+failed = []   # 不符的檢查名稱：總結行直接列出（2026-10-08 一次「1 項不符」因為只截了最後一行而查不到是哪一項）
 
 
 def check(desc, ok, detail=""):
@@ -40,6 +41,7 @@ def check(desc, ok, detail=""):
     print(f"{'✓' if ok else '✗'} {desc}{'' if ok else '：' + str(detail)}")
     if not ok:
         fails += 1
+        failed.append(desc)
     return ok
 
 
@@ -135,7 +137,7 @@ def main():
     except (ValueError, KeyError, StopIteration) as e:
         check("V5 線上 manifest 讀得到", False, f"HTTP {st}：{e}")
 
-    print("VERIFY-LIVE OK：全部符合" if not fails else f"VERIFY-LIVE FAILED：{fails} 項不符")
+    print("VERIFY-LIVE OK：全部符合" if not fails else f"VERIFY-LIVE FAILED：{fails} 項不符（{'｜'.join(failed)}）")
     return 1 if fails else 0
 
 
