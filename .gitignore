@@ -1,0 +1,22 @@
+# 這個 repo 會公開。下面這些只能留在本機（見 docs/STATUS.md 常設規則 5）。
+# 注意：.gitignore 只擋一般的 git add；`git add -f` 擋不住，所以另有 commit 前自查（scripts/selfcheck.py）。
+
+# 官方參考檔：TABF 試題、答案、簡章
+refs/
+# 本機題庫：TABF 轉檔、使用者 自己匯入的題目
+data/local/
+# 任何 PDF 與 Office 文件，不論放在哪
+*.pdf
+*.PDF
+*.docx
+*.xlsx
+*.pptx
+
+# 開發用
+__pycache__/
+*.pyc
+node_modules/
+.logs/
+
+# 本機私人清單：真實姓名、任職機構、學校等（commit 前自查 R6 用，絕不入庫）
+.selfcheck-private.txt

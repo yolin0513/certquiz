@@ -1,0 +1,3 @@
+#!/bin/sh
+# push 前掃整段歷史：commit 過又刪掉的檔仍在歷史裡，推上去就公開了
+exec python -I "$(git rev-parse --show-toplevel)/scripts/selfcheck.py" --history

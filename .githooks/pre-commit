@@ -1,0 +1,4 @@
+#!/bin/sh
+# commit 前自查：PDF、題目檔、本機路徑、email 不得進公開 repo（scripts/selfcheck.py）
+# 啟用：git config core.hooksPath .githooks（新 clone 要重下一次，見 docs/STATUS.md）
+exec python -I "$(git rev-parse --show-toplevel)/scripts/selfcheck.py"
