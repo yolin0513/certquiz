@@ -1,6 +1,6 @@
 {
  "app": "CertQuiz",
- "dataVersion": "da39a3ee5e6b",
+ "dataVersion": "7a215e7fbbe0",
  "certs": [
   {
    "id": "bic",
@@ -42,7 +42,7 @@
    "short": "AZ-900",
    "org": "Microsoft",
    "lang": "zh-Hant",
-   "status": "planned",
+   "status": "active",
    "questionSource": "bundled",
    "notice": "原創練習題，不是考題；依官方 study guide（Skills measured as of July 20, 2026）出題。本網站與 Microsoft 無關。",
    "subjects": [
@@ -52,8 +52,160 @@
      "exam": null
     }
    ],
-   "bundledCount": 0,
-   "bundledFile": null
+   "syllabus": {
+    "version": "Skills measured as of July 20, 2026",
+    "source": "https://learn.microsoft.com/en-us/credentials/certifications/resources/study-guides/az-900",
+    "objectives": [
+     {
+      "id": "A.1",
+      "name": "Describe cloud computing",
+      "domain": "Describe cloud concepts (25–30%)",
+      "skills": [
+       "Define cloud computing",
+       "Describe the shared responsibility model",
+       "Define cloud models, including public, private, and hybrid",
+       "Identify appropriate use cases for each cloud model",
+       "Describe the consumption-based model",
+       "Compare cloud pricing models",
+       "Describe serverless"
+      ],
+      "quota": 26
+     },
+     {
+      "id": "A.2",
+      "name": "Describe the benefits of using cloud services",
+      "domain": "Describe cloud concepts (25–30%)",
+      "skills": [
+       "Describe the benefits of high availability and scalability in the cloud",
+       "Describe the benefits of reliability and predictability in the cloud",
+       "Describe the benefits of security and governance in the cloud",
+       "Describe the benefits of manageability in the cloud"
+      ],
+      "quota": 15
+     },
+     {
+      "id": "A.3",
+      "name": "Describe cloud service types",
+      "domain": "Describe cloud concepts (25–30%)",
+      "skills": [
+       "Describe infrastructure as a service (IaaS)",
+       "Describe platform as a service (PaaS)",
+       "Describe software as a service (SaaS)",
+       "Identify appropriate use cases for each cloud service type (IaaS, PaaS, and SaaS)"
+      ],
+      "quota": 15
+     },
+     {
+      "id": "B.1",
+      "name": "Describe the core architectural components of Azure",
+      "domain": "Describe Azure architecture and services (35–40%)",
+      "skills": [
+       "Describe Azure regions, region pairs, and sovereign regions",
+       "Describe availability zones",
+       "Describe Azure datacenters",
+       "Describe Azure resources and resource groups",
+       "Describe subscriptions",
+       "Describe management groups",
+       "Describe the hierarchy of resource groups, subscriptions, and management groups"
+      ],
+      "quota": 20
+     },
+     {
+      "id": "B.2",
+      "name": "Describe Azure compute and networking services",
+      "domain": "Describe Azure architecture and services (35–40%)",
+      "skills": [
+       "Compare compute types, including containers, virtual machines, and functions",
+       "Describe virtual machine options, including Azure virtual machines, Azure Virtual Machine Scale Sets, availability sets, and Azure Virtual Desktop",
+       "Describe the resources required for virtual machines",
+       "Describe application hosting options, including web apps, containers, and virtual machines",
+       "Describe virtual networking, including the purpose of Azure virtual networks, subnets, peering, Azure DNS, Azure VPN Gateway, and ExpressRoute",
+       "Define public and private endpoints"
+      ],
+      "quota": 17
+     },
+     {
+      "id": "B.3",
+      "name": "Describe Azure storage services",
+      "domain": "Describe Azure architecture and services (35–40%)",
+      "skills": [
+       "Compare Azure Storage services",
+       "Describe storage tiers",
+       "Describe redundancy options",
+       "Describe storage account options and storage types",
+       "Identify options for moving files, including AzCopy, Azure Storage Explorer, and Azure File Sync",
+       "Describe migration options, including Azure Migrate and Azure Data Box"
+      ],
+      "quota": 17
+     },
+     {
+      "id": "B.4",
+      "name": "Describe Azure identity, access, and security",
+      "domain": "Describe Azure architecture and services (35–40%)",
+      "skills": [
+       "Describe directory services in Azure, including Microsoft Entra ID and Microsoft Entra Domain Services",
+       "Describe authentication methods in Azure, including single sign-on (SSO), multifactor authentication (MFA), and passwordless",
+       "Describe external identities in Azure",
+       "Describe Microsoft Entra Conditional Access",
+       "Describe Azure role-based access control (RBAC)",
+       "Describe the concept of Zero Trust",
+       "Describe the purpose of the defense-in-depth model",
+       "Describe the purpose of Microsoft Defender for Cloud"
+      ],
+      "quota": 23
+     },
+     {
+      "id": "C.1",
+      "name": "Describe cost management in Azure",
+      "domain": "Describe Azure management and governance (30–35%)",
+      "skills": [
+       "Describe factors that can affect costs in Azure",
+       "Explore the pricing calculator",
+       "Describe cost management capabilities in Azure",
+       "Describe the purpose of tags"
+      ],
+      "quota": 18
+     },
+     {
+      "id": "C.2",
+      "name": "Describe features and tools in Azure for governance and compliance",
+      "domain": "Describe Azure management and governance (30–35%)",
+      "skills": [
+       "Describe the purpose of Microsoft Purview in Azure",
+       "Describe the purpose of Azure Policy",
+       "Describe the purpose of resource locks"
+      ],
+      "quota": 14
+     },
+     {
+      "id": "C.3",
+      "name": "Describe features and tools for managing and deploying Azure resources",
+      "domain": "Describe Azure management and governance (30–35%)",
+      "skills": [
+       "Describe the Azure portal",
+       "Describe Azure Cloud Shell, Azure CLI, and Azure PowerShell",
+       "Describe the purpose of Azure Arc",
+       "Describe infrastructure as code (IaC)",
+       "Describe Azure Resource Manager (ARM) and ARM templates"
+      ],
+      "quota": 22
+     },
+     {
+      "id": "C.4",
+      "name": "Describe monitoring tools in Azure",
+      "domain": "Describe Azure management and governance (30–35%)",
+      "skills": [
+       "Describe the purpose of Azure Advisor",
+       "Describe Azure Service Health",
+       "Describe Azure Monitor, including Log Analytics, Azure Monitor alerts, and Azure Monitor Application Insights"
+      ],
+      "quota": 13
+     }
+    ],
+    "total": 200
+   },
+   "bundledCount": 200,
+   "bundledFile": "data/q/az900.json"
   }
  ]
 }

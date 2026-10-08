@@ -131,6 +131,8 @@ def main():
         ("AZ-900 的 basis 不是 learn.microsoft.com → 擋、點名", {"az900/a.txt": GOOD_AZ.replace("https://learn.microsoft.com/en-us/azure/example-page", "https://example.com/x")}, {}, "public", False, ["az900-a-o-0001"]),
         ("AZ-900 的 objective 不在官方大綱 → 擋、點名", {"az900/a.txt": GOOD_AZ.replace("objective: A.2", "objective: Z.9")}, {}, "public", False, ["az900-a-o-0001"]),
         ("AZ-900 的 skill 超出該節次的官方細項數 → 擋、點名", {"az900/a.txt": GOOD_AZ.replace("skill: 1", "skill: 5")}, {}, "public", False, ["az900-a-o-0001"]),
+        ("解析的「選項 N」點到正解 → 擋、點名", {"az900/a.txt": GOOD_AZ.replace("explain: 解析。", "explain: 解析（選項 1、3 錯）。")}, {}, "public", False, ["az900-a-o-0001"]),
+        ("解析的「選項 N」只點錯誤選項 → 通過", {"az900/a.txt": GOOD_AZ.replace("explain: 解析。", "explain: 解析（選項 2、3 錯）。")}, {}, "public", True),
         ("AZ-900 缺 skill → 擋、點名", {"az900/a.txt": GOOD_AZ.replace("skill: 1\n", "")}, {}, "public", False, ["az900-a-o-0001"]),
         ("一題有錯、其他題都對 → 一個檔都不寫", {"az900/a.txt": GOOD_AZ, "az900/b.txt": GOOD_AZ.replace("az900-a-o-0001", "az900-a-o-0002").replace("answer: 1", "answer: 9")}, {}, "public", False, ["az900-a-o-0002"]),
     ]

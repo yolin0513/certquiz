@@ -1,0 +1,738 @@
+=== az900-a1-003
+type: single
+chapter: az900.all
+objective: A.1
+skill: 1
+stem: 一家零售公司預期季節性新品上市期間流量大增，活動結束後回到平常水準。依 Microsoft Learn 對雲端運算的說明，最合適的做法是？
+1: 提前數月採購並設定額外的實體伺服器
+2: 興建一座新的資料中心來承接尖峰
+3: 上市期間在雲端部署額外的運算容量，結束後再縮減
+4: 拉長採購週期，提早一年規劃容量
+answer: 3
+source: original-ai
+basis: https://learn.microsoft.com/en-us/training/modules/describe-cloud-compute/3-what-cloud-compute
+basis_anchor: #practical-example
+basis_section: Practical example
+basis_hash: 11bb03d19931a9bf6278f37f46b261a17dca69ed8096aabf97dac5abaed2aef0
+basis_len: 180
+explain: 原文：不必提前數月購買實體伺服器（選項 1 錯），而是在上市期間於雲端部署額外容量、之後縮減。同一頁：用雲端擴充不必等新資料中心蓋好（選項 2 錯）；雲端把基礎結構規劃從「漫長的採購週期」改成「隨需佈建」（選項 4 錯）。
+
+=== az900-a1-004
+type: single
+chapter: az900.all
+objective: A.1
+skill: 4
+stem: 公司已在自有資料中心運行私人雲。每年有幾週需求會暫時暴增，希望這段期間借用公用雲資源支撐，平常仍以私人雲為主。這是哪一種雲端模型的典型用途？
+1: 公用雲（Public cloud）
+2: 私人雲（Private cloud）
+3: 多雲（Multicloud）
+4: 混合雲（Hybrid cloud）
+answer: 4
+source: original-ai
+basis: https://learn.microsoft.com/en-us/training/modules/describe-cloud-compute/5-define-cloud-models
+basis_anchor: #hybrid-cloud
+basis_section: Hybrid cloud
+basis_hash: 027d974e43ce22daaa4675c30ec266460348b06c3055fa613c87801483cd5f5b
+basis_len: 141
+explain: 原文：混合雲可以讓私人雲在暫時性需求增加時，部署公用雲資源來支撐。同一頁：私人雲是單一組織使用的環境，本身不含公用雲資源；公用雲由第三方供應商建置維護，不包含你的私人雲；多雲是同時使用多家「公用雲」供應商。
+
+=== az900-a1-005
+type: single
+chapter: az900.all
+objective: A.1
+skill: 5
+stem: 公司撤掉自有機房的伺服器，改用雲端服務並依實際用量付費。下列敘述何者正確？
+1: 這筆雲端支出屬於資本支出（CapEx），因為是對實體基礎結構的預先投入
+2: 這筆雲端支出屬於營運支出（OpEx）
+3: 仍須預先估計並購買未來需要的容量
+4: 用不到的閒置容量也要照樣付費
+answer: 2
+source: original-ai
+basis: https://learn.microsoft.com/en-us/training/modules/describe-cloud-compute/6-describe-consumption-based-model
+basis_anchor: #
+basis_hash: 8036114baeaff836046fab022ff604dc97556d23f3fd896163ec473406c5421a
+basis_len: 112
+explain: 原文：雲端服務依使用量付費，所以歸類為營運支出。同一頁：CapEx 指的是伺服器、網路設備、機房空間等實體基礎結構的預先支出（選項 1 錯）；預先估計未來容量是傳統資料中心的做法，雲端依實際需求調整（選項 3 錯）；你只為實際使用付費，不為閒置容量付費（選項 4 錯）。
+
+=== az900-a1-006
+type: single
+chapter: az900.all
+objective: A.1
+skill: 6
+stem: 某個工作負載未來三年會 24 小時持續執行，用量穩定。想降低成本，下列哪一個做法符合 Azure 保留（Azure Reservations）的用途？
+1: 購買一年期或三年期的保留，以承諾使用換取折扣
+2: 維持隨用隨付（pay-as-you-go），因為保留不會帶來任何折扣
+3: 購買保留後，資源會被暫停執行以節省費用
+4: 保留只能一次預付，不能按月付款
+answer: 1
+source: original-ai
+basis: https://learn.microsoft.com/en-us/azure/cost-management-billing/reservations/save-compute-costs-reservations
+basis_anchor: #
+basis_hash: e74b3420d5838c66c22b0390e341fa6ae8f5f66afa68873d7d6b17f115254174
+basis_len: 173
+explain: 原文：承諾一年或三年期方案，就能在使用的資源上取得折扣。同一頁：保留最多可比隨用隨付價格便宜 72%（選項 2 錯）；保留是帳單折扣，不影響資源的執行狀態（選項 3 錯）；保留可以預付或按月付款，兩者總價相同（選項 4 錯）。
+
+=== az900-a1-007
+type: single
+chapter: az900.all
+objective: A.1
+skill: 7
+stem: Azure Functions 的 Flex Consumption 方案是無伺服器（serverless）的主機方案。下列敘述何者正確？
+1: 必須預先佈建固定數量的執行個體，並全時付費
+2: 執行個體數量固定為一個，無法依事件擴展
+3: 只為隨需執行的部分付費
+4: 工作負載必須持續有流量，不能從完全沒有活動開始
+answer: 3
+source: original-ai
+basis: https://learn.microsoft.com/en-us/azure/azure-functions/functions-scale
+basis_anchor: #overview-of-plans
+basis_section: Overview of plans
+basis_hash: 38c7be969d073bbc2063330b0e601da4ba2bd5e9f2edaa755e163fd947be5e20
+basis_len: 88
+explain: 原文：需要無伺服器主機、只為隨需執行付費時，考慮 Flex Consumption（選項 1 錯）。同一頁：函式執行個體會依傳入事件等因素動態擴展（最多 1,000 個，選項 2 錯）；適合「從沒有活動到需要快速事件驅動擴展」的變動工作負載（選項 4 錯）。
+
+=== az900-a2-002
+type: single
+chapter: az900.all
+objective: A.2
+skill: 2
+stem: 某應用程式部署在全球多個區域。其中一個區域發生災難性事件，其他區域仍持續運作，應用程式因此能從故障中恢復並繼續運作。這體現的是雲端的哪一項好處？
+1: 成本可預測性（cost predictability）
+2: 效能可預測性（performance predictability）
+3: 自動調整規模（autoscaling）
+4: 可靠性（reliability）
+answer: 4
+source: original-ai
+basis: https://learn.microsoft.com/en-us/training/modules/describe-benefits-use-cloud-services/3-reliability-predictability-cloud
+basis_anchor: #reliability
+basis_section: Reliability
+basis_hash: 465e2e925ca111884ce840a7060409542c6001059459dff6936f3fae34d68486
+basis_len: 89
+explain: 原文：可靠性是系統從故障中恢復並持續運作的能力；同一段也說即使某個區域發生災難事件，其他區域仍在運作。同一頁：成本可預測性是預測雲端支出；效能可預測性是預測提供良好體驗所需的資源；自動調整規模是支撐效能可預測性的手段之一（依需求增減資源），都不是「從故障中恢復」。
+
+=== az900-a2-003
+type: single
+chapter: az900.all
+objective: A.2
+skill: 3
+stem: 公司資安團隊希望對安全性有最大的掌控權，要自己管理作業系統與已安裝的軟體，包括修補與維護。依 Microsoft Learn，哪一種部署最合適？
+1: 基礎結構即服務（IaaS）
+2: 平台即服務（PaaS）
+3: 軟體即服務（SaaS）
+4: 任何雲端服務類型都一樣，客戶都不能管理作業系統
+answer: 1
+source: original-ai
+basis: https://learn.microsoft.com/en-us/training/modules/describe-benefits-use-cloud-services/4-security-governance-cloud
+basis_anchor: #
+basis_hash: bb16cd928e757b3749d9bd868c4f8fda01c5a36f07e137c939a10842ca80491e
+basis_len: 206
+explain: 原文：想要最大的安全掌控，IaaS 讓你管理作業系統與已安裝軟體，包括修補與維護（選項 4 錯）。同一段接著說：希望修補與維護自動處理，才是選 PaaS 或 SaaS（選項 2、3 錯）。
+
+=== az900-a2-004
+type: single
+chapter: az900.all
+objective: A.2
+skill: 4
+stem: Microsoft Learn 把雲端的可管理性分成「雲端的管理（management of the cloud）」與「在雲端中的管理（management in the cloud）」。下列哪一項屬於「雲端的管理」？
+1: 透過網頁入口網站管理
+2: 依需求自動調整資源部署
+3: 使用命令列介面管理
+4: 使用 API 管理
+answer: 2
+source: original-ai
+basis: https://learn.microsoft.com/en-us/training/modules/describe-benefits-use-cloud-services/5-manageability-cloud
+basis_anchor: #management-of-the-cloud
+basis_section: Management of the cloud
+basis_hash: bd0383b3e04b8351a6ede173f4a8e8b28102d9dfec4d2d985f2139118bb35715
+basis_len: 142
+explain: 原文：「雲端的管理」指的是管理雲端資源本身，例如依需求自動調整部署。同一頁：網頁入口網站、命令列介面、API、PowerShell 屬於「在雲端中的管理」——也就是「用什麼方式」去管理（選項 1、3、4）。
+
+=== az900-a3-003
+type: single
+chapter: az900.all
+objective: A.3
+skill: 2
+stem: 關於平台即服務（PaaS）的敘述，下列何者正確？
+1: 在 PaaS 中，資料中心的實體安全由客戶負責
+2: PaaS 是付費使用一套已完整部署好的解決方案，例如電子郵件
+3: 在 PaaS 中，作業系統與中介軟體由客戶維護
+4: 在 PaaS 情境中，不必擔心作業系統與資料庫的授權或修補
+answer: 4
+source: original-ai
+basis: https://learn.microsoft.com/en-us/training/modules/describe-cloud-service-types/3-describe-platform-service
+basis_anchor: #
+basis_hash: 3d372ae0421806a967cc8c09bb18adb820218b6628bb76dc1aa5e2f1d6974937
+basis_len: 112
+explain: 原文：PaaS 情境中不必擔心作業系統與資料庫的授權或修補。同一頁：PaaS 中由雲端供應商維護實體基礎結構、實體安全與網際網路連線（選項 1 錯），也維護作業系統、中介軟體與開發工具（選項 3 錯）；「付費使用完整部署好的解決方案」是 SaaS，PaaS 介於 IaaS 與 SaaS 之間（選項 2 錯）。
+
+=== az900-a3-004
+type: single
+chapter: az900.all
+objective: A.3
+skill: 4
+stem: 公司想先在雲端建立與地端資料中心類似的資源，再把現有工作負載原樣搬上去（lift-and-shift）。最適合哪一種服務類型？
+1: 平台即服務（PaaS）
+2: 軟體即服務（SaaS）
+3: 基礎結構即服務（IaaS）
+4: 函式即服務（FaaS）
+answer: 3
+source: original-ai
+basis: https://learn.microsoft.com/en-us/training/modules/describe-cloud-service-types/2-describe-infrastructure-service
+basis_anchor: #scenarios
+basis_section: Scenarios
+basis_hash: b094b0f835809792e9e356c6439e190e8293c6140213bdbf65f022ec879ab074
+basis_len: 150
+explain: 原文：IaaS 的常見情境就是 lift-and-shift——在雲端建立與地端資料中心類似的資源，再把工作負載搬到 IaaS。Azure「選擇運算服務」文件也寫 IaaS 是最接近傳統地端環境的模型；PaaS 讓你不必管理 VM 就部署應用、FaaS 是把程式碼交給服務自動執行、SaaS 是使用現成的應用程式，都不是「原樣搬移」。
+
+=== az900-a3-005
+type: single
+chapter: az900.all
+objective: A.3
+skill: 4
+stem: 公司需要電子郵件與費用追蹤系統，不想管理任何基礎結構、平台或應用程式維護，只想直接使用。最適合哪一種服務類型？
+1: 基礎結構即服務（IaaS）
+2: 平台即服務（PaaS）
+3: 函式即服務（FaaS）
+4: 軟體即服務（SaaS）
+answer: 4
+source: original-ai
+basis: https://learn.microsoft.com/en-us/training/modules/describe-cloud-service-types/4-describe-software-service
+basis_anchor: #
+basis_hash: a74c28a00bf8d4ecf9e4f33ef1e2cec64bf5e1642866f98ccca474b05d0b9e2a
+basis_len: 126
+explain: 原文：電子郵件、財務軟體、訊息應用程式都是 SaaS 的常見例子；同一頁也寫 SaaS 由供應商管理幾乎整個應用程式堆疊，客戶負擔的營運最少。IaaS 要自己管理作業系統以上；PaaS 仍要自己開發應用程式；FaaS 是部署自己的程式碼——都要自己寫或管理應用程式。
+
+=== az900-b1-003
+type: single
+chapter: az900.all
+objective: B.1
+skill: 1
+stem: 一個美國政府機關基於合規或法律要求，需要使用與 Azure 主要執行個體隔離的 Azure 環境。應該選擇？
+1: 區域配對（region pair）
+2: 主權區域（sovereign region）
+3: 可用性區域（availability zone）
+4: 同一個區域內的另一座資料中心
+answer: 2
+source: original-ai
+basis: https://learn.microsoft.com/en-us/training/modules/describe-core-architectural-components-of-azure/5-describe-azure-physical-infrastructure
+basis_anchor: #sovereign-regions
+basis_section: Sovereign Regions
+basis_hash: 7dbccf012230cd89dfae2eb751a6c400f01e237d09771e9d203a95543d123d99
+basis_len: 164
+explain: 原文：主權區域是與 Azure 主要執行個體隔離的 Azure 執行個體，可能因合規或法律目的需要使用；同一段舉例 US DoD Central、US Gov Virginia 等是供美國政府機關使用。同一頁：區域配對是兩個區域互為備援、用於區域性災難；可用性區域是同一區域內實體分開的資料中心——兩者和資料中心一樣，都屬於主要的 Azure，不是隔離的執行個體。
+
+=== az900-b1-004
+type: single
+chapter: az900.all
+objective: B.1
+skill: 4
+stem: 團隊要建一個臨時的開發環境（數台 VM、虛擬網路、資料庫），專案結束後要一次把全部資源清掉。最合適的做法是？
+1: 把所有資源放在同一個資源群組，用完後刪除這個資源群組
+2: 讓每個資源同時屬於兩個資源群組，方便日後刪除
+3: 把這個資源群組巢狀放進另一個資源群組
+4: 建好後把資源群組改名為「待刪除」，Azure 就會自動清除
+answer: 1
+source: original-ai
+basis: https://learn.microsoft.com/en-us/training/modules/describe-core-architectural-components-of-azure/6-describe-azure-management-infrastructure
+basis_anchor: #azure-resources-and-resource-groups
+basis_section: Azure resources and resource groups
+basis_hash: b31deb3640ecfcabed2bdf398690d6ab3ce668fd2361355d0001f11cc616ee78
+basis_len: 121
+explain: 原文：對資源群組的動作會影響其中所有資源，刪除資源群組會刪除其中全部內容；同一段正好舉「臨時開發環境用完整組刪除」的例子。同一頁：每個資源必須屬於「剛好一個」資源群組（選項 2 錯）；資源群組不能巢狀（選項 3 錯），建立後也不能改名（選項 4 錯）。
+
+=== az900-b1-005
+type: single
+chapter: az900.all
+objective: B.1
+skill: 5
+stem: 公司想讓開發環境與生產環境分開計費，並分別套用不同的支出限制與存取規則。下列敘述何者正確？
+1: 一個 Azure 帳戶只能有一個訂用帳戶，所以做不到
+2: 訂用帳戶不是計費單位，帳單只能依資源群組分開
+3: 可以建立兩個訂用帳戶，各自設定不同的支出限制與存取規則
+4: 存取管理原則無法套用在訂用帳戶層級
+answer: 3
+source: original-ai
+basis: https://learn.microsoft.com/en-us/training/modules/describe-core-architectural-components-of-azure/6-describe-azure-management-infrastructure
+basis_anchor: #azure-subscriptions
+basis_section: Azure subscriptions
+basis_hash: 224df7b9869c9efb4ef30034d7aafd0f7656e9ab54607eb5378986e9cf2d44fb
+basis_len: 154
+explain: 原文舉的就是開發與生產各用一個訂用帳戶、各有不同的支出限制與存取規則。同一頁：一個帳戶可以有多個訂用帳戶（選項 1 錯）；Azure 會為每個訂用帳戶產生個別的帳單報告與發票（選項 2 錯）；Azure 在訂用帳戶層級套用存取管理原則（選項 4 錯）。
+
+=== az900-b1-006
+type: single
+chapter: az900.all
+objective: B.1
+skill: 7
+stem: 下列何者是 Azure 管理階層由小到大的正確順序？
+1: 資源群組 → 資源 → 管理群組 → 訂用帳戶
+2: 資源 → 訂用帳戶 → 資源群組 → 管理群組
+3: 資源 → 資源群組 → 管理群組 → 訂用帳戶
+4: 資源 → 資源群組 → 訂用帳戶 → 管理群組
+answer: 4
+source: original-ai
+basis: https://learn.microsoft.com/en-us/training/modules/describe-core-architectural-components-of-azure/6-describe-azure-management-infrastructure
+basis_anchor: #azure-management-groups
+basis_section: Azure management groups
+basis_hash: b539d76f53933c04402fdc4bc20ceea08defd934096744e4b6313cf0eea3e9a9
+basis_len: 305
+explain: 原文：資源放進資源群組，資源群組放進訂用帳戶；管理群組位於訂用帳戶之上。所以由小到大是 資源 → 資源群組 → 訂用帳戶 → 管理群組。
+
+=== az900-b2-003
+type: single
+chapter: az900.all
+objective: B.2
+skill: 2
+stem: 網站流量隨時段變化，希望用一組集中管理的 VM，依需求或排程自動增減 VM 的「數量」。應該使用？
+1: 可用性設定組（availability set）
+2: 虛擬機器擴展集（Virtual Machine Scale Sets）
+3: 把現有那台 VM 換成更大的規格
+4: 可用性區域（availability zone）
+answer: 2
+source: original-ai
+basis: https://learn.microsoft.com/en-us/azure/virtual-machines/availability-set-overview
+basis_anchor: #
+basis_hash: 918a76660fa3d0a66ad5d4a8db39850bd74e90e0ce873675e86204114a4d90cf
+basis_len: 203
+explain: 原文：擴展集可以集中管理 VM，並依需求或排程自動增減 VM 數量。同一頁：可用性設定組是把 VM 分散到多個容錯網域、降低同時故障機率的邏輯群組；可用性區域提供最高的可靠性——兩者都是為了可用性，不會自動增減數量。換更大規格是加大單一 VM（垂直擴展），不是增減數量。
+
+=== az900-b2-004
+type: single
+chapter: az900.all
+objective: B.2
+skill: 4
+stem: 新創團隊要部署一個 Node.js 網頁應用程式與 RESTful API，不想管理底層基礎結構。最適合的 Azure 服務是？
+1: Azure 虛擬機器（Azure Virtual Machines）
+2: Azure 虛擬桌面（Azure Virtual Desktop）
+3: Azure App Service
+4: Azure Data Box
+answer: 3
+source: original-ai
+basis: https://learn.microsoft.com/en-us/azure/app-service/overview
+basis_anchor: #
+basis_hash: 37bb852dad893a0da4306183c7302cb63f1f14df6a5ffbed55c32e6038d40aa6
+basis_len: 165
+explain: 原文：App Service 讓你執行網頁應用程式、行動後端與 RESTful API，不必管理底層基礎結構；同一頁列出支援 Node.js。虛擬機器屬 IaaS，要自己管理 VM；Azure Virtual Desktop 是桌面與應用程式虛擬化服務；Data Box 是寄送實體裝置傳輸大量資料——都不符合。
+
+=== az900-b2-005
+type: single
+chapter: az900.all
+objective: B.2
+skill: 6
+stem: 公司希望虛擬網路裡的應用程式，透過虛擬網路的私人 IP 位址安全地連到 Azure Storage，等於把這個服務「帶進」自己的虛擬網路。應該使用？
+1: 私人端點（private endpoint）
+2: 可從網際網路存取的公用端點（public endpoint）
+3: 虛擬網路對等互連（virtual network peering）
+4: Azure DNS
+answer: 1
+source: original-ai
+basis: https://learn.microsoft.com/en-us/azure/private-link/private-endpoint-overview
+basis_anchor: #
+basis_hash: da3ae61fe4dfa8cd38645fa5cf7d5bedb5e21c80a12e3c1a5a8cd7d4e1c8dad1
+basis_len: 296
+explain: 原文：私人端點是使用你虛擬網路私人 IP 的網路介面，私密、安全地連到 Private Link 支援的服務，等於把服務帶進你的虛擬網路；同一頁列出 Azure Storage 是可連的服務之一。公用端點走公用網路；虛擬網路對等互連是連接兩個虛擬網路；Azure DNS 是 DNS 網域的代管服務——都不是「用私人 IP 把服務帶進 VNet」。
+
+=== az900-b3-003
+type: single
+chapter: az900.all
+objective: B.3
+skill: 1
+stem: 一個現有應用程式用原生檔案系統 API 在多台機器間共用資料。公司想把它 lift and shift 到雲端，並能從 Windows、Linux、macOS 掛載共用。最適合哪一種 Azure 儲存服務？
+1: Azure Blobs
+2: Azure Queues
+3: Azure Tables
+4: Azure Files
+answer: 4
+source: original-ai
+basis: https://learn.microsoft.com/en-us/azure/storage/common/storage-introduction
+basis_anchor: #sample-scenarios-for-azure-storage-services
+basis_section: Sample scenarios for Azure Storage services
+basis_hash: 1f7a14bffb89e5520f76489909cca442ee2070a4c2d6970f2ccfe745e3b6f951
+basis_len: 99
+explain: 原文：Azure 檔案共用可以從雲端或地端的 Windows、Linux、macOS 掛載；同一張比較表的「何時使用」寫明：要把已經用原生檔案系統 API 共用資料的應用程式 lift and shift 到雲端時，用 Azure Files。同一頁：Blobs 是物件儲存、Queues 是應用元件之間的訊息、Tables 是 NoSQL 結構化資料——都不是可掛載的檔案共用。
+
+=== az900-b3-004
+type: single
+chapter: az900.all
+objective: B.3
+skill: 5
+stem: 分公司仍要保留地端 Windows 檔案伺服器的效能與相容性，但希望把公司的檔案共用集中到 Azure Files。應該使用？
+1: AzCopy
+2: Azure Data Box
+3: Azure File Sync
+4: Azure Migrate
+answer: 3
+source: original-ai
+basis: https://learn.microsoft.com/en-us/azure/storage/file-sync/file-sync-introduction
+basis_anchor: #
+basis_hash: 950c6363dc69b2d8fa74e11607e2ea8f1063fd886e7e9f755c95fcb7af0d0838
+basis_len: 173
+explain: 原文：File Sync 把檔案共用集中到 Azure Files，同時保有地端 Windows 檔案伺服器的彈性、效能與相容性。AzCopy 是在儲存體帳戶之間複製資料的命令列工具；Data Box 是寄送實體裝置傳輸大量資料；Azure Migrate 是評估與執行遷移的服務——都不會持續和地端檔案伺服器同步。
+
+=== az900-b3-005
+type: single
+chapter: az900.all
+objective: B.3
+skill: 6
+stem: 公司要把 300 TB 的歷史資料一次搬到 Azure，但機房的網路連線非常有限。最適合哪一個做法？
+1: Azure Data Box
+2: Azure File Sync
+3: AzCopy
+4: Azure Storage Explorer
+answer: 1
+source: original-ai
+basis: https://learn.microsoft.com/en-us/azure/databox/data-box-overview
+basis_anchor: #use-cases
+basis_section: Use cases
+basis_hash: 7c9e32064890852f158b97513f7fd453ae1a30c62f17fcb40ff6a9fe68a27391
+basis_len: 122
+explain: 原文：Data Box 最適合在沒有或有限網路連線的情境下，傳輸大於 40 TB 的資料；同一頁說會寄給你一台實體的 Data Box 儲存裝置。File Sync、AzCopy、Storage Explorer 都要經過網路傳輸，在網路非常有限時不適合搬 300 TB。
+
+=== az900-b4-003
+type: single
+chapter: az900.all
+objective: B.4
+skill: 1
+stem: 一個舊應用程式依賴網域加入、LDAP、Kerberos 等 AD DS 協定，一時無法改用新式驗證；公司又不想在雲端自行部署、管理、修補網域控制站。應該使用？
+1: Microsoft Entra External ID
+2: Microsoft Entra Domain Services
+3: Microsoft Entra 條件式存取（Conditional Access）
+4: Azure 角色型存取控制（Azure RBAC）
+answer: 2
+source: original-ai
+basis: https://learn.microsoft.com/en-us/entra/identity/domain-services/overview
+basis_anchor: #
+basis_hash: 23408b5febdcd2f8d097f97d0a0a2255c4b074f4b65f923b0e4659ba847cf75f
+basis_len: 294
+explain: 原文：Domain Services 提供受管理的網域服務（網域加入、群組原則、LDAP、Kerberos/NTLM），不必自己部署、管理、修補網域控制站；同一頁也寫它用來支援依賴 AD DS 協定、難以改成新式驗證的舊應用程式。External ID 是讓外部使用者存取；條件式存取是 if-then 存取原則；RBAC 是授權誰能對 Azure 資源做什麼——都不提供網域服務。
+
+=== az900-b4-004
+type: single
+chapter: az900.all
+objective: B.4
+skill: 2
+stem: 關於 Microsoft Entra 多重要素驗證（MFA）的敘述，下列何者正確？
+1: 只要使用者設定一組夠長的密碼，就算完成 MFA
+2: 指紋屬於「你知道的東西（something you know）」
+3: MFA 不能用來保護密碼重設
+4: MFA 要求兩種以上的驗證方法：你知道的、你擁有的、你本身的特徵
+answer: 4
+source: original-ai
+basis: https://learn.microsoft.com/en-us/entra/identity/authentication/concept-mfa-howitworks
+basis_anchor: #
+basis_hash: 6796db8c488ffe28fcc6527fcab89484ebe0c35430cd47ae09dd6b453141b1c0
+basis_len: 325
+explain: 原文：MFA 要求兩種以上的方法——你知道的（通常是密碼）、你擁有的（手機、硬體金鑰）、你本身的特徵（指紋、臉部掃描等生物特徵）。只有密碼是單一因素（選項 1 錯）；指紋是「你本身的特徵」（選項 2 錯）。同一頁：MFA 也能進一步保護密碼重設（選項 3 錯）。
+
+=== az900-b4-005
+type: single
+chapter: az900.all
+objective: B.4
+skill: 3
+stem: 公司想讓外部合作夥伴與訪客，透過邀請或自助註冊安全地存取公司的企業應用程式，並控制來賓的存取層級。應該使用？
+1: Microsoft Entra External ID 的 B2B 共同作業（B2B collaboration）
+2: Microsoft Entra Domain Services
+3: Azure 資源鎖定（resource lock）
+4: 為每一位合作夥伴各建立一個 Azure 訂用帳戶
+answer: 1
+source: original-ai
+basis: https://learn.microsoft.com/en-us/entra/external-id/external-identities-overview
+basis_anchor: #
+basis_hash: f0464dd2569776747b06f4746cc4e6793478743d531c8fa4e370fda76cad95b8
+basis_len: 212
+explain: 原文：要讓員工與商業夥伴、來賓共同作業，使用 External ID 的 B2B 共同作業，透過邀請或自助註冊安全存取企業應用程式；同一段也寫可以決定來賓的存取層級。Domain Services 是給舊應用程式的受管理網域服務；資源鎖定是防止刪除或修改資源；訂用帳戶是管理、計費與規模的單位——都不是讓外部身分存取應用程式的方法。
+
+=== az900-b4-006
+type: single
+chapter: az900.all
+objective: B.4
+skill: 6
+stem: 在零信任（Zero Trust）模型中，「以即時存取（Just-In-Time）與恰好足夠的存取（Just-Enough-Access）、依風險調整的原則來限制使用者存取」對應的是哪一個指導原則？
+1: 明確驗證（Verify explicitly）
+2: 假設入侵（Assume breach）
+3: 使用最低權限存取（Use least privilege access）
+4: 深度防禦（Defense in depth）
+answer: 3
+source: original-ai
+basis: https://learn.microsoft.com/en-us/training/modules/describe-azure-identity-access-security/7-describe-zero-trust-model
+basis_anchor: #
+basis_hash: a4afe1fc3e83046a78c306a8d23bfd41ad50618081cee159713b7684a4b4efe6
+basis_len: 149
+explain: 原文：「使用最低權限存取」就是用 JIT／JEA、依風險調整的原則與資料保護來限制使用者存取。同一頁列出的另外兩個指導原則：「明確驗證」是一律根據所有可用的資料點進行驗證與授權；「假設入侵」是限制可能的影響範圍並分段存取。深度防禦是另一個安全概念（多層防護包住中心的資料），不在零信任的這三個指導原則裡。
+
+=== az900-b4-007
+type: single
+chapter: az900.all
+objective: B.4
+skill: 7
+stem: 在深度防禦（defense-in-depth）模型中，「使用 DDoS 防護，在大規模攻擊造成服務阻斷之前加以過濾」屬於哪一層？
+1: 網路層（network）
+2: 計算層（compute）
+3: 應用程式層（application）
+4: 周邊層（perimeter）
+answer: 4
+source: original-ai
+basis: https://learn.microsoft.com/en-us/training/modules/describe-azure-identity-access-security/8-describe-defense-depth
+basis_anchor: #layers-of-defense-in-depth
+basis_section: Layers of defense-in-depth
+basis_hash: 344bc0e25913d60306d4dfe2235ba47032c4b74cfc1dd81dba8eb2f9b684de5b
+basis_len: 155
+explain: 原文：周邊層用 DDoS 防護過濾大規模攻擊。同一頁：網路層以分段與存取控制限制資源之間的通訊；計算層保護對虛擬機器的存取；應用程式層確保應用程式安全、沒有安全性弱點。
+
+=== az900-c1-002
+type: single
+chapter: az900.all
+objective: C.1
+skill: 1
+stem: 同一種規格的 Azure 資源部署在不同區域，價格可能不同。依 Microsoft Learn，主要原因是？
+1: 區域只影響延遲，不影響價格
+2: 不同地點的電力、人力、稅金與費用成本不同
+3: 價格差異只來自訂用帳戶類型
+4: Azure 所有區域的價格都相同，不會有差異
+answer: 2
+source: original-ai
+basis: https://learn.microsoft.com/en-us/training/modules/describe-cost-management-azure/2-describe-factors-affect-costs-azure
+basis_anchor: #geography
+basis_section: Geography
+basis_hash: cbde24c0f4de0308e3e3995ec96bf65096b1d13106c1ec877c9590895e356beb
+basis_len: 73
+explain: 原文：電力、人力、稅金與費用依地點而不同，所以 Azure 資源的價格可能因區域而異（選項 1、4 錯）。同一頁把資源類型、用量、維護、地理位置、訂用帳戶類型、Azure Marketplace 都列為影響成本的因素，不是只有訂用帳戶類型（選項 3 錯）。
+
+=== az900-c1-003
+type: single
+chapter: az900.all
+objective: C.1
+skill: 1
+stem: 關於 Azure 的資料傳輸（頻寬）成本，下列敘述何者正確？
+1: 部分進入 Azure 資料中心的資料傳輸是免費的；離開資料中心的資料傳輸則依區域分組（zone）計價
+2: 所有進出 Azure 資料中心的資料傳輸一律免費
+3: 計費區域（billing zone）就是可用性區域（availability zone）
+4: 離開資料中心的資料傳輸以單一全球價格計算，與地區無關
+answer: 1
+source: original-ai
+basis: https://learn.microsoft.com/en-us/training/modules/describe-cost-management-azure/2-describe-factors-affect-costs-azure
+basis_anchor: #network-traffic
+basis_section: Network traffic
+basis_hash: 7c1e351de96bb9eee411ccfe305f847529e8ce52552f06cafce27f81b47fb40a
+basis_len: 176
+explain: 原文：部分輸入（進入資料中心）的傳輸免費；輸出（離開資料中心）依 zone 計價（選項 2、4 錯）。同一頁：計費區域是為資料傳輸計價而做的區域分組，和可用性區域不同（選項 3 錯）。
+
+=== az900-c1-004
+type: single
+chapter: az900.all
+objective: C.1
+skill: 2
+stem: 專案經理在部署之前，想把預期的 Azure 用量換算成預估費用，以便編列預算。應該使用？
+1: Azure Advisor
+2: Azure 服務健康狀態（Azure Service Health）
+3: Azure 定價計算機（Azure pricing calculator）
+4: 資源鎖定（resource lock）
+answer: 3
+source: original-ai
+basis: https://learn.microsoft.com/en-us/azure/cost-management-billing/costs/pricing-calculator
+basis_anchor: #
+basis_hash: 50ed7442bc78809734be654b5b6ca8b64fb3e0537ade295fb10a2d73b5a37766
+basis_len: 148
+explain: 原文：定價計算機把預期用量換算成預估成本，方便規劃與編列預算。Advisor 是分析「已部署」資源的設定與使用狀況後提出建議；Service Health 通知服務中斷與維護；資源鎖定防止刪除或修改資源——都不是部署前估價的工具。
+
+=== az900-c1-005
+type: single
+chapter: az900.all
+objective: C.1
+skill: 3
+stem: 財務團隊想在 Azure 入口網站分析成本，並在支出接近預算時主動收到警示。應該使用？
+1: Azure Arc
+2: Azure 原則（Azure Policy）
+3: Microsoft Entra 條件式存取
+4: Microsoft Cost Management
+answer: 4
+source: original-ai
+basis: https://learn.microsoft.com/en-us/azure/cost-management-billing/costs/overview-cost-management
+basis_anchor: #
+basis_hash: 69255a84d240a8c956fc067b57806dcbedc3a897576a432a209db0f4f685726d
+basis_len: 246
+explain: 原文：Cost Management 可以在 Azure 入口網站等處報告與分析成本，並用預算、異常等警示主動監控成本。Azure Arc 是把非 Azure 資源納入 Azure Resource Manager 管理；Azure Policy 是強制組織標準與評估合規；條件式存取是存取控制原則——都不是成本分析工具。
+
+=== az900-c2-003
+type: single
+chapter: az900.all
+objective: C.2
+skill: 1
+stem: 公司的資料分散在地端、多個雲端與 SaaS 服務上，想取得單一、統一的資料檢視，並進行資料治理、風險與合規管理。適合哪一套解決方案？
+1: Microsoft Purview
+2: Azure Advisor
+3: Azure Cloud Shell
+4: Azure 保留（Azure Reservations）
+answer: 1
+source: original-ai
+basis: https://learn.microsoft.com/en-us/training/modules/describe-features-tools-azure-for-governance-compliance/2-describe-purpose-microsoft-purview
+basis_anchor: #
+basis_hash: 19b9693d1d3b7e5c90c3483fa12c8e5a5e85c86895a17995daa180518994be46
+basis_len: 138
+explain: 原文：Purview 是一系列資料治理、風險與合規的解決方案，讓你取得單一、統一的資料檢視；同一頁也寫它把地端、多雲與 SaaS 的資料洞察集中在一起。Advisor 提出部署最佳化建議；Cloud Shell 是瀏覽器裡的終端機；Reservations 是承諾使用換折扣——都不是資料治理。
+
+=== az900-c2-004
+type: single
+chapter: az900.all
+objective: C.2
+skill: 2
+stem: 公司規定所有團隊只能把 Azure 資源部署到核准的區域，而且要自動強制執行，不靠人工檢查。應該使用？
+1: 資源鎖定（resource lock）
+2: 標籤（tags）
+3: Azure 原則（Azure Policy）
+4: Azure Advisor
+answer: 3
+source: original-ai
+basis: https://learn.microsoft.com/en-us/azure/governance/policy/overview
+basis_anchor: #
+basis_hash: 17bae921a6f9ae913266695ccd77175205f78134b4f73a093e7f0a277be9833d
+basis_len: 139
+explain: 原文：Azure Policy 可強制執行的治理動作之一，就是確保團隊只把資源部署到允許的區域。資源鎖定是防止刪除或修改既有資源；標籤是附加在資源上的名稱與值，本身不強制任何事（標籤文件也是用 tag policies 來強制）；Advisor 只提出建議、不強制。
+
+=== az900-c2-005
+type: single
+chapter: az900.all
+objective: C.2
+skill: 3
+stem: 管理員對一個資源群組套用了「刪除」鎖定（CanNotDelete）。之後有人在這個資源群組新增一個儲存體帳戶，這個新的儲存體帳戶會怎樣？
+1: 不受鎖定影響，因為它是在鎖定之後才新增的
+2: 會自動改成唯讀（ReadOnly）鎖定
+3: 只有 Owner 以外的使用者會受限制
+4: 也會繼承同一個鎖定
+answer: 4
+source: original-ai
+basis: https://learn.microsoft.com/en-us/azure/azure-resource-manager/management/lock-resources
+basis_anchor: #lock-inheritance
+basis_section: Lock inheritance
+basis_hash: d3b54483faa76cfcdfce419de8d4f9c76c32b8d7ed9dc84b6662b7d7e57e5ab7
+basis_len: 154
+explain: 原文：在上層範圍套用鎖定，範圍內所有資源都會繼承同一個鎖定，之後新增的資源也一樣（選項 1 錯）；繼承的是「同一個」鎖定，不會變成 ReadOnly（選項 2 錯）。同一頁：鎖定會覆寫任何使用者權限，套用到所有使用者與角色（選項 3 錯）。
+
+=== az900-c3-003
+type: single
+chapter: az900.all
+objective: C.3
+skill: 1
+stem: 關於 Azure 入口網站（Azure portal）的敘述，下列何者正確？
+1: 它只能檢視資源，不能建立新資源
+2: 它是網頁型的統一主控台，可以透過圖形介面建立與管理所有 Azure 資源
+3: 它只部署在單一資料中心，那座資料中心故障時就無法使用
+4: 每次改版都需要使用者自行下載安裝新版
+answer: 2
+source: original-ai
+basis: https://learn.microsoft.com/en-us/azure/azure-portal/azure-portal-overview
+basis_anchor: #
+basis_hash: 0b2e90adb3a52a61512f4ddb6ab6a739752fadb72fdfb3bd1f091834484709fb
+basis_len: 214
+explain: 原文：入口網站是網頁型的統一主控台，可以建立與管理所有 Azure 資源，用圖形介面管理訂用帳戶（選項 1 錯）。同一頁：入口網站在每個 Azure 資料中心都有據點，能承受個別資料中心故障（選項 3 錯）；它持續更新、維護不需要停機，用任何支援的瀏覽器就能存取（選項 4 錯）。
+
+=== az900-c3-004
+type: single
+chapter: az900.all
+objective: C.3
+skill: 2
+stem: 管理員臨時借用一台沒有安裝任何 Azure 工具的電腦，需要用 Bash 或 PowerShell 管理 Azure 資源。最方便的選擇是？
+1: 先在這台電腦安裝 Azure Arc
+2: Azure Advisor
+3: Azure Cloud Shell
+4: Azure Data Box
+answer: 3
+source: original-ai
+basis: https://learn.microsoft.com/en-us/azure/cloud-shell/overview
+basis_anchor: #
+basis_hash: f81672d3ca5566ff636cf1d2dd7daa1bf35c9046e93d29bf8cfae85bcb53fa59
+basis_len: 231
+explain: 原文：Cloud Shell 是從瀏覽器就能用、已經驗證過的互動式終端機，可以選 Bash 或 PowerShell——不必在本機安裝工具。Azure Arc 是把非 Azure 資源納入 Azure Resource Manager 管理；Advisor 提出最佳化建議；Data Box 是資料傳輸裝置。
+
+=== az900-c3-005
+type: single
+chapter: az900.all
+objective: C.3
+skill: 4
+stem: 關於基礎結構即程式碼（Infrastructure as Code，IaC）的敘述，下列何者正確？
+1: IaC 是透過程式碼與範本來管理基礎結構，而不是手動設定
+2: IaC 指的是在入口網站逐一手動設定每個環境
+3: IaC 只能用 ARM 範本，不能從 Azure CLI 或 Azure PowerShell 開始
+4: 使用 ARM 範本時，必須寫出逐步的部署指令
+answer: 1
+source: original-ai
+basis: https://learn.microsoft.com/en-us/training/modules/describe-features-tools-manage-deploy-azure-resources/4-describe-azure-resource-manager-azure-arm-templates
+basis_anchor: #infrastructure-as-code
+basis_section: Infrastructure as code
+basis_hash: 0c60ea62cb4cec4a9d792ba2b0087d0cc0f5dcc858446143ef9340da0d6814cf
+basis_len: 118
+explain: 原文：IaC 是透過程式碼與範本管理基礎結構，取代手動設定（選項 2 錯）。同一頁：IaC 可以從 Azure CLI 或 Azure PowerShell 開始，再發展成用 ARM 範本與 Bicep 做可重複的部署（選項 3 錯）；ARM 範本是宣告式語法，定義要部署什麼，而不是寫逐步的部署指令（選項 4 錯）。
+
+=== az900-c3-006
+type: single
+chapter: az900.all
+objective: C.3
+skill: 5
+stem: 關於 Bicep 的敘述，下列何者正確？
+1: Bicep 是命令式（imperative）語言，必須逐步寫出建立資源的順序
+2: 使用 Bicep 必須自己管理狀態檔（state file）
+3: Bicep 是使用宣告式語法來部署 Azure 資源的領域專用語言
+4: Bicep 是要額外付費的進階功能
+answer: 3
+source: original-ai
+basis: https://learn.microsoft.com/en-us/azure/azure-resource-manager/bicep/overview
+basis_anchor: #
+basis_hash: c5f5468f2529d5af1fa78e7f4fba8e8896d0b4cc31fda4d1330be2c4348f7fb0
+basis_len: 91
+explain: 原文：Bicep 是用宣告式語法部署 Azure 資源的領域專用語言（選項 1 錯）。同一頁：不需要管理狀態或狀態檔，Azure 會儲存所有狀態（選項 2 錯）；Bicep 免費且開放原始碼（選項 4 錯）。
+
+=== az900-c3-007
+type: single
+chapter: az900.all
+objective: C.3
+skill: 3
+stem: 公司在地端資料中心與其他雲端供應商上都有 Kubernetes 叢集與資料庫，希望像管理 Azure 裡的資源一樣管理它們。應該使用？
+1: Azure Data Box
+2: Azure Arc
+3: Azure 虛擬桌面（Azure Virtual Desktop）
+4: 區域配對（region pair）
+answer: 2
+source: original-ai
+basis: https://learn.microsoft.com/en-us/azure/azure-arc/overview
+basis_anchor: #
+basis_hash: 5c5d6320de8a1b10cf7fc67078ab6236344bea956ae1af24174a255f9ac87bbc
+basis_len: 92
+explain: 原文：Azure Arc 讓你像在 Azure 中執行一樣，管理虛擬機器、Kubernetes 叢集與資料庫；同一頁開頭說 Arc 提供一致的多雲與地端管理平台。Data Box 用來傳輸資料；Azure Virtual Desktop 是桌面虛擬化；區域配對用於區域性災難復原——都不是跨環境的統一管理。
+
+=== az900-c4-003
+type: single
+chapter: az900.all
+objective: C.4
+skill: 3
+stem: 開發團隊想監控上線中的網頁應用程式效能（application performance monitoring，APM），並與 Azure Monitor 整合。應該使用？
+1: Azure Monitor 的 Application Insights
+2: Azure Advisor
+3: Azure 服務健康狀態（Azure Service Health）
+4: Microsoft Purview
+answer: 1
+source: original-ai
+basis: https://learn.microsoft.com/en-us/azure/azure-monitor/fundamentals/overview
+basis_anchor: #monitor-your-applications
+basis_section: Monitor your applications
+basis_hash: 0d4e99559c69a594af635c527d1d2677e402dcebe935d71d80dfb695b77f4a1f
+basis_len: 145
+explain: 原文：Application Insights 是 Azure Monitor 的功能，為上線中的網頁應用程式提供效能監控（APM）。Advisor 提出最佳化建議；Service Health 通知 Azure 服務的中斷與維護；Purview 是資料治理——都不是應用程式效能監控。
+
+=== az900-c4-004
+type: single
+chapter: az900.all
+objective: C.4
+skill: 2
+stem: 管理員想知道「某一台特定的虛擬機器」目前的健康狀態。應該查看 Azure Service Health 的哪一部分？
+1: Azure status
+2: Service health
+3: Resource health
+4: Azure Advisor 的成本建議
+answer: 3
+source: original-ai
+basis: https://learn.microsoft.com/en-us/azure/service-health/overview
+basis_anchor: #key-components-of-service-health
+basis_section: Key components of Service Health
+basis_hash: 6e654124592efbc33138c993961aea77715c531326d7201b85fde2e884defaf2
+basis_len: 134
+explain: 原文：Resource health 提供個別雲端資源（例如某一台虛擬機器）的健康資訊。同一頁：Azure status 是所有區域、所有 Azure 服務的全球檢視；Service health 是你使用的服務與區域的個人化檢視——都不是單一資源。Advisor 的成本建議是降低支出的建議，不是健康狀態。

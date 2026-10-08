@@ -45,7 +45,16 @@ async function homeView(gen) {
   const m = await loadManifest();
   const cards = [];
   for (const c of m.certs) {
-    const { questions } = await loadPool(c.id);
+    // 一張證照的題庫讀不到（例如離線且還沒快取過），只影響那一張卡片，不能讓整個首頁掛掉
+    let questions;
+    try {
+      ({ questions } = await loadPool(c.id));
+    } catch (e) {
+      cards.push(h('section', { class: 'card' }, h('h2', { text: c.name }),
+        h('p', { class: 'ng', text: `題庫暫時讀不到：${e.message}` }),
+        h('p', { class: 'muted', text: '連上網路後重新開啟一次，題庫就會存到這台裝置。' })));
+      continue;
+    }
     const active = questions.filter(L.isActive);
     const attempts = await DB.getAll('attempts', c.id);
     const mistakes = await DB.getAll('mistakes', c.id);

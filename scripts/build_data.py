@@ -164,6 +164,10 @@ def validate(q, where, cert_ids, mode):
             errs.append(f"{tag}：缺 basis_anchor（章節錨點，頁首用 #）或 basis_section（章節標題）")
         if not q.get("explain"):
             errs.append(f"{tag}：缺 explain（解析）")
+        # 解析用「選項 N」點名的都是錯誤選項；點到正解代表調換選項時解析沒跟著改
+        for m in re.finditer(r"選項 ([1-4](?:、[1-4])*)", q.get("explain", "")):
+            if q.get("answer", "") in m.group(1).split("、"):
+                errs.append(f"{tag}：解析的「{m.group(0)}」點到正解 {q.get('answer')}（選項調換後解析沒跟著改？）")
     out = {
         "id": qid, "cert": cert, "subject": chapter.split(".")[1] if "." in chapter else "",
         "chapter": chapter, "type": "single", "stem": stem, "options": options,

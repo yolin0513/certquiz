@@ -1,0 +1,372 @@
+=== az900-a1-001
+type: single
+chapter: az900.all
+objective: A.1
+skill: 2
+stem: 依共同責任模型（shared responsibility model），不論工作負載部署在 IaaS、PaaS 或 SaaS，下列哪一項永遠由客戶負責？
+1: 實體主機（Physical hosts）
+2: 作業系統（Operating system）
+3: 客戶資料（Customer data）
+4: 網路控制（Network controls）
+answer: 3
+source: original-ai
+basis: https://learn.microsoft.com/en-us/azure/security/fundamentals/shared-responsibility
+basis_anchor: #division-of-responsibility
+basis_section: Division of responsibility
+basis_hash: 7ad17baa6bb8e2f29447b239f9a2739bd88d6588c43702cdef4ef70c98ea63c3
+basis_len: 65
+explain: 原文：所有雲端部署類型，資料與身分都歸客戶所有。同一頁的責任矩陣也寫明：實體主機在 IaaS 起就由 Microsoft 負責；作業系統在 PaaS、SaaS 由 Microsoft 負責；網路控制在 PaaS 是共同負責、SaaS 由 Microsoft 負責——只有客戶資料在四種情境都是 Customer。
+
+=== az900-a1-002
+type: single
+chapter: az900.all
+objective: A.1
+skill: 3
+stem: 一個運算環境同時使用公用雲與私人雲，而且兩者互相連接。這是哪一種雲端模型？
+1: 公用雲（Public cloud）
+2: 混合雲（Hybrid cloud）
+3: 私人雲（Private cloud）
+4: 多雲（Multicloud）
+answer: 2
+source: original-ai
+basis: https://learn.microsoft.com/en-us/training/modules/describe-cloud-compute/5-define-cloud-models
+basis_anchor: #hybrid-cloud
+basis_section: Hybrid cloud
+basis_hash: 55fed807c4922bf07d73d2175f3a5d11f28def2adeb90b0ca81e0352ed1d63e6
+basis_len: 117
+explain: 原文直接定義混合雲＝公用雲＋私人雲、互相連接。同一頁：私人雲是單一組織使用；公用雲由第三方雲端供應商建置維護、任何人都可購買；多雲是同時使用「多家公用雲供應商」，不是公用雲＋私人雲。
+
+=== az900-a2-001
+type: single
+chapter: az900.all
+objective: A.2
+skill: 1
+stem: 開發中的應用程式需要更多運算能力，於是替同一台虛擬機器加上更多 CPU 與記憶體（RAM）。這屬於哪一種做法？
+1: 水平擴展（horizontal scaling，scale out）
+2: 高可用性（high availability）
+3: 服務等級協定（SLA）
+4: 垂直擴展（vertical scaling，scale up）
+answer: 4
+source: original-ai
+basis: https://learn.microsoft.com/en-us/training/modules/describe-benefits-use-cloud-services/2-high-availability-scalability-cloud
+basis_anchor: #vertical-scaling
+basis_section: Vertical scaling
+basis_hash: c8b617db7cb4ca7263c3e3604903cd490426e219f8cce51c73bca43a0314ad2b
+basis_len: 168
+explain: 原文：需要更多處理能力時，替虛擬機器加 CPU 或 RAM 就是垂直擴展（scale up）。同一頁：水平擴展是增減資源的「數量」（例如多加幾台 VM）；高可用性是確保服務盡可能持續可用；SLA 是 Azure 對各服務的可用時間保證，都不是「替同一台 VM 加規格」。
+
+=== az900-a3-001
+type: single
+chapter: az900.all
+objective: A.3
+skill: 1
+stem: 關於基礎結構即服務（IaaS）的敘述，下列何者正確？
+1: 雲端供應商負責維護硬體、網際網路連線與實體安全，作業系統的安裝、設定與維護由客戶負責
+2: 雲端供應商負責作業系統的安裝與維護，客戶只需管理應用程式
+3: IaaS 是彈性最低的雲端服務類別
+4: 在 IaaS 中，資料庫與儲存的設定由雲端供應商負責
+answer: 1
+source: original-ai
+basis: https://learn.microsoft.com/en-us/training/modules/describe-cloud-service-types/2-describe-infrastructure-service
+basis_anchor: #
+basis_hash: 9aa01692635494c7402a762c3bcc60a8dfa266fd0460ac6f9fe47ab22835bcd6
+basis_len: 255
+explain: 原文：IaaS 中供應商只負責硬體、網際網路連線與實體安全，其餘（包括作業系統、網路設定、資料庫與儲存設定）都由客戶負責，所以選項 2、4 錯。同一頁開頭寫 IaaS 是「最有彈性」（most flexible）的類別，所以選項 3 錯。
+
+=== az900-a3-002
+type: single
+chapter: az900.all
+objective: A.3
+skill: 3
+stem: 關於軟體即服務（SaaS）的敘述，下列何者正確？
+1: SaaS 是彈性最高的雲端服務模型
+2: 使用 SaaS 本質上是租用或使用一套已完整開發好的應用程式
+3: 使用 SaaS 需要的技術知識最多
+4: 在 SaaS 中，基礎結構的修補由客戶負責
+answer: 2
+source: original-ai
+basis: https://learn.microsoft.com/en-us/training/modules/describe-cloud-service-types/4-describe-software-service
+basis_anchor: #
+basis_hash: 44ac881ba3cebf48a1d62294bdbe0b41562c0dba91637db29c87df340aacda11
+basis_len: 77
+explain: 原文：SaaS 就是租用或使用已完整開發好的應用程式。同一頁也寫：SaaS 可能是「最不具彈性」的模型，卻也最容易上手、需要的技術知識「最少」；基礎結構修補、應用程式更新由供應商處理。所以 1、3、4 都錯。
+
+=== az900-b1-001
+type: single
+chapter: az900.all
+objective: B.1
+skill: 2
+stem: 關於可用性區域（Availability Zone）的敘述，下列何者正確？
+1: 每個可用性區域一律只包含一個資料中心
+2: 可用性區域之間通常相隔數千公里，以避開同一場災害
+3: 可用性區域是一個區域（region）內，由一個或多個實體上分開的資料中心組成的邏輯群組
+4: 其中一個可用性區域發生停電時，同區域的其他可用性區域也會一起停止運作
+answer: 3
+source: original-ai
+basis: https://learn.microsoft.com/en-us/azure/reliability/availability-zones-overview
+basis_anchor: #datacenters-and-availability-zones
+basis_section: Datacenters and availability zones
+basis_hash: a5e14d3c3a84eab566eda78d761faaa86e008dfafcb7e9ba73437842615f3bd6
+basis_len: 106
+explain: 原文直接定義。同一頁：有些區域只有一個資料中心、有些有多個（選項 1 錯）；可用性區域通常彼此在 100 公里以內（選項 2 錯）；設計上一個區域出問題（例如停電、網路問題），其他區域照常運作（選項 4 錯）。
+
+=== az900-b1-002
+type: single
+chapter: az900.all
+objective: B.1
+skill: 6
+stem: 關於管理群組（management group）的敘述，下列何者正確？
+1: 一個訂用帳戶（subscription）可以同時有多個父管理群組
+2: 管理群組的階層深度沒有上限
+3: 同一個管理群組內的訂用帳戶，可以分別信任不同的 Microsoft Entra 租用戶（tenant）
+4: 在管理群組上套用的治理條件，會透過繼承套用到其下所有的訂用帳戶
+answer: 4
+source: original-ai
+basis: https://learn.microsoft.com/en-us/azure/governance/management-groups/overview
+basis_anchor: #
+basis_hash: 4bb77e367b3dd383a3c916c9a6cdfb3a77b44efa4de3f84d006017b117f47299
+basis_len: 152
+explain: 原文：治理條件會以繼承方式套用到所有相關訂用帳戶。同一頁：每個管理群組與訂用帳戶「只能有一個父項」（選項 1 錯）；管理群組樹最多支援六層深（不含根層與訂用帳戶層，選項 2 錯）；同一管理群組內的訂用帳戶必須信任同一個 Microsoft Entra 租用戶（選項 3 錯）。
+
+=== az900-b2-001
+type: single
+chapter: az900.all
+objective: B.2
+skill: 5
+stem: 兩個 Azure 虛擬網路（VNet）建立對等互連（virtual network peering）之後，兩者之間的流量如何傳送？
+1: 保留在 Microsoft 骨幹網路上，不需要經過公用網際網路、閘道或加密
+2: 經過公用網際網路，必須另外設定 VPN 閘道加密
+3: 建立對等互連時，兩邊虛擬網路的資源都必須停機
+4: 對等互連只能連接同一個 Azure 區域內的虛擬網路
+answer: 1
+source: original-ai
+basis: https://learn.microsoft.com/en-us/azure/virtual-network/virtual-network-peering-overview
+basis_anchor: #
+basis_hash: 89af5c80077a2befc119ffc1616c92da7018727df4272eff267311acf3973e80
+basis_len: 187
+explain: 原文：對等互連的流量留在 Microsoft 骨幹網路，不需要公用網際網路、閘道或加密（選項 2 錯）。同一頁：建立對等互連時與之後，兩邊資源都不會停機（選項 3 錯）；全域虛擬網路對等互連（Global virtual network peering）可以跨區域連接（選項 4 錯）。
+
+=== az900-b2-002
+type: single
+chapter: az900.all
+objective: B.2
+skill: 1
+stem: 關於 Azure Functions 的敘述，下列何者正確？
+1: 使用 Azure Functions 必須自行部署並維護執行程式碼的伺服器
+2: Azure Functions 只能由 HTTP 請求觸發，無法依排程執行
+3: Azure Functions 是無伺服器（serverless）解決方案，不必操心部署與維護伺服器
+4: Azure Functions 只支援 C# 一種程式語言
+answer: 3
+source: original-ai
+basis: https://learn.microsoft.com/en-us/azure/azure-functions/functions-overview
+basis_anchor: #
+basis_hash: 569a7fbba218ff520a0af14eb997b3eab18f5941a2641b9bc99c98c796485f97
+basis_len: 326
+explain: 原文：Azure Functions 是無伺服器方案，不必擔心部署與維護伺服器（選項 1 錯）。同一頁的情境表列有「Run scheduled task：依預定時間間隔執行資料清理程式碼」（選項 2 錯）；開發語言列出 C#、Java、JavaScript、PowerShell、Python、Go（選項 4 錯）。
+
+=== az900-b3-001
+type: single
+chapter: az900.all
+objective: B.3
+skill: 3
+stem: 哪一種 Azure 儲存體備援選項，會把資料複寫到主要區域內的「單一實體資料中心」？
+1: 區域備援儲存體（ZRS，Zone-redundant storage）
+2: 異地備援儲存體（GRS，Geo-redundant storage）
+3: 本地備援儲存體（LRS，Locally redundant storage）
+4: 異地區域備援儲存體（GZRS，Geo-zone-redundant storage）
+answer: 3
+source: original-ai
+basis: https://learn.microsoft.com/en-us/azure/storage/common/storage-redundancy
+basis_anchor: #redundancy-in-the-primary-region
+basis_section: Redundancy in the primary region
+basis_hash: a5f4c7b204af77f23e9e4589cc4bcad240a4c54967301f85b0baa84524db4532
+basis_len: 158
+explain: 原文：LRS 把資料複寫到主要區域內的單一實體資料中心。同一頁：ZRS 是同步複寫到主要區域的三個以上可用性區域；GRS 在主要區域用 LRS 後再非同步複寫到次要區域；GZRS 在主要區域用 ZRS 後再複寫到次要區域——都不只單一資料中心。
+
+=== az900-b3-002
+type: single
+chapter: az900.all
+objective: B.3
+skill: 2
+stem: 一個 blob 目前在封存層（Archive tier）。要讀取或下載它，必須怎麼做？
+1: 直接讀取即可，只是延遲較高
+2: 先把它解除凍結（rehydrate）到線上層：經常性存取層（hot）、非經常性存取層（cool）或冷存取層（cold）
+3: 先修改它的內容，才能觸發讀取
+4: 不需要任何動作，因為封存層本身就是線上層
+answer: 2
+source: original-ai
+basis: https://learn.microsoft.com/en-us/azure/storage/blobs/access-tiers-overview
+basis_anchor: #archive-access-tier
+basis_section: Archive access tier
+basis_hash: 1e42616fea0ea7cb31a440e6a590a5b80b131b7c950a91a2906c717c27255b5e
+basis_len: 188
+explain: 原文：封存層中的 blob 不能讀取也不能修改（選項 1、3 錯），必須先解除凍結到 hot、cool 或 cold 線上層。同一頁定義封存層是「離線層」（offline tier），所以選項 4 錯。
+
+=== az900-b4-001
+type: single
+chapter: az900.all
+objective: B.4
+skill: 5
+stem: 在 Azure 角色型存取控制（Azure RBAC）中，一個角色指派（role assignment）由哪三個元素組成？
+1: 使用者、密碼、多重要素驗證
+2: 訂用帳戶、資源群組、標籤
+3: 原則定義、計畫（initiative）、指派
+4: 安全性主體（security principal）、角色定義（role definition）、範圍（scope）
+answer: 4
+source: original-ai
+basis: https://learn.microsoft.com/en-us/azure/role-based-access-control/overview
+basis_anchor: #how-azure-rbac-works
+basis_section: How Azure RBAC works
+basis_hash: bb017ceb89d9ab8af7f2ff071c173573a3612549ad1d0a5944ee3652a679e812
+basis_len: 93
+explain: 原文直接列出角色指派的三個元素：安全性主體、角色定義、範圍。其他三組都不是原文列出的元素（選項 3 是 Azure Policy 的概念，不是 RBAC 角色指派）。
+
+=== az900-b4-002
+type: single
+chapter: az900.all
+objective: B.4
+skill: 4
+stem: 關於 Microsoft Entra 條件式存取（Conditional Access）的敘述，下列何者正確？
+1: 條件式存取原則最簡單的形式是 if-then 陳述式：如果使用者要存取某項資源，就必須完成某個動作
+2: 條件式存取只依據網路邊界判斷，不考慮使用者與裝置的身分
+3: 條件式存取原則只能封鎖存取，不能要求使用者完成多重要素驗證（MFA）
+4: 條件式存取不參考任何訊號，對所有使用者一律套用相同的控制
+answer: 1
+source: original-ai
+basis: https://learn.microsoft.com/en-us/entra/identity/conditional-access/overview
+basis_anchor: #overview
+basis_section: Overview
+basis_hash: 58143afaa3552eb966b238701d020ed6b9aa442e71fdc0729043810333638f34
+basis_len: 142
+explain: 原文：條件式存取原則最簡單的形式就是 if-then 陳述式。同一頁：現代安全性已延伸到網路邊界之外、包含使用者與裝置身分（選項 2 錯）；原文的例子就是「要存取 Microsoft 365 就必須執行多重要素驗證」（選項 3 錯）；條件式存取會整合各種訊號來做決策（選項 4 錯）。
+
+=== az900-c1-001
+type: single
+chapter: az900.all
+objective: C.1
+skill: 4
+stem: 關於 Azure 標籤（tags）的敘述，下列何者正確？
+1: 資源會自動繼承其資源群組上的標籤
+2: 標籤可以套用到管理群組（management group）
+3: 資源不會繼承套用在資源群組或訂用帳戶上的標籤
+4: 標籤以加密方式儲存，適合存放密碼等敏感值
+answer: 3
+source: original-ai
+basis: https://learn.microsoft.com/en-us/azure/azure-resource-manager/management/tag-resources
+basis_anchor: #inherit-tags
+basis_section: Inherit tags
+basis_hash: 8f8adcf2770e9ea7648f9bfa623f83a0d23dcbb16e6283bcd87f41acbbfc24ea
+basis_len: 81
+explain: 原文：資源不會繼承資源群組或訂用帳戶上的標籤（選項 1 錯）。同一頁：標籤可以套用到資源、資源群組與訂用帳戶，但不能套用到管理群組（選項 2 錯）；標籤以純文字儲存，不要放敏感值（選項 4 錯）。
+
+=== az900-c2-001
+type: single
+chapter: az900.all
+objective: C.2
+skill: 2
+stem: 關於 Azure 原則（Azure Policy）的敘述，下列何者正確？
+1: Azure Policy 主要用來決定哪個使用者可以在哪個範圍執行哪些動作
+2: Azure Policy 確保資源狀態符合你的業務規則，不論變更是誰做的、誰有權限做變更
+3: Azure Policy 只能評估合規性，無法修正不符合規範的資源
+4: Azure Policy 只能逐一檢視單一資源，沒有整體的合規性檢視
+answer: 2
+source: original-ai
+basis: https://learn.microsoft.com/en-us/azure/governance/policy/overview
+basis_anchor: #azure-policy-and-azure-rbac
+basis_section: Azure Policy and Azure RBAC
+basis_hash: 551f8dc93f19455c2ef56969cd2ad198e8fd87b0935b55d31b50881bd5578a1a
+basis_len: 156
+explain: 原文：Azure Policy 確保資源狀態合規，不在乎是誰做的變更。同一頁：依使用者管理動作是 Azure RBAC 的重點（選項 1 錯）；Azure Policy 可以對既有資源大量修正、對新資源自動修正（選項 3 錯）；合規性儀表板提供整體彙總檢視，並可往下細看到個別資源（選項 4 錯）。
+
+=== az900-c2-002
+type: single
+chapter: az900.all
+objective: C.2
+skill: 3
+stem: 對一個資源設定唯讀（ReadOnly）鎖定後，已獲授權的使用者可以對它做什麼？
+1: 可以讀取，但不能刪除或更新
+2: 可以讀取和修改，但不能刪除
+3: 擁有 Owner 角色的使用者不受鎖定限制，仍可刪除
+4: 完全不能讀取
+answer: 1
+source: original-ai
+basis: https://learn.microsoft.com/en-us/azure/azure-resource-manager/management/lock-resources
+basis_anchor: #
+basis_hash: 017d2d846e8819bdea6554f1bdbf03d7712456af483ea9a367dbcac40c3e4bdb
+basis_len: 88
+explain: 原文：ReadOnly 鎖定下，授權使用者可以讀取，但不能刪除或更新（選項 4 錯）。同一頁：「可以讀取和修改、但不能刪除」是 CanNotDelete 鎖定（選項 2 錯）；鎖定會覆寫任何使用者權限，對所有使用者與角色都有效（選項 3 錯）。
+
+=== az900-c3-001
+type: single
+chapter: az900.all
+objective: C.3
+skill: 3
+stem: 關於 Azure Arc 的敘述，下列何者正確？
+1: Azure Arc 只能管理在 Azure 內執行的資源
+2: Azure Arc 只能管理虛擬機器，不能管理 Kubernetes 叢集或資料庫
+3: Azure Arc 可以把既有的非 Azure 或地端資源投射到 Azure Resource Manager，統一管理整個環境
+4: 使用 Azure Arc 之前，必須先把地端資源遷移到 Azure
+answer: 3
+source: original-ai
+basis: https://learn.microsoft.com/en-us/azure/azure-arc/overview
+basis_anchor: #
+basis_hash: 3c4e72a71d569985f4789e4aa78a516159fae88846f6484fc83daca722b37548
+basis_len: 135
+explain: 原文：Azure Arc 把既有的非 Azure 或地端資源投射到 Azure Resource Manager 來統一管理——資源留在原處，不必先遷移（選項 1、4 錯）。同一頁緊接著寫：可以像在 Azure 中一樣管理虛擬機器、Kubernetes 叢集與資料庫（選項 2 錯）。
+
+=== az900-c3-002
+type: single
+chapter: az900.all
+objective: C.3
+skill: 5
+stem: 同一份 Azure Resource Manager 範本（ARM template）重複部署多次，結果會是？
+1: 每部署一次就多建立一份相同的資源
+2: 第二次部署會失敗，因為資源已經存在
+3: 每次都得到相同狀態的相同資源類型，因為範本是冪等的（idempotent）
+4: ARM 範本是命令式（imperative）腳本，部署結果取決於指令執行順序
+answer: 3
+source: original-ai
+basis: https://learn.microsoft.com/en-us/azure/azure-resource-manager/templates/overview
+basis_anchor: #why-choose-arm-templates
+basis_section: Why choose ARM templates?
+basis_hash: 08c6f33faa34810e919bb5e774f8070ceb10ff63c89eb63ccbaae7a9658fd4e2
+basis_len: 132
+explain: 原文：範本是冪等的，部署多次會得到相同狀態的相同資源類型（選項 1 錯）。同一頁的範例：若具有指定屬性的儲存體帳戶已存在，部署不會做任何變更（選項 2 錯）；ARM 範本使用宣告式語法（declarative syntax），只要寫出想部署什麼，不必寫指令順序（選項 4 錯）。
+
+=== az900-c4-001
+type: single
+chapter: az900.all
+objective: C.4
+skill: 1
+stem: Azure Advisor 的建議分成幾個類別。「偵測可能導致安全性漏洞的威脅與弱點」屬於哪一類？
+1: 可靠性（Reliability）
+2: 效能（Performance）
+3: 卓越營運（Operational excellence）
+4: 安全性（Security）
+answer: 4
+source: original-ai
+basis: https://learn.microsoft.com/en-us/azure/advisor/advisor-overview
+basis_anchor: #what-is-advisor
+basis_section: What is Advisor?
+basis_hash: 37df973ebe1ccdab3292952a0582f6b888863f93e1f14b4cd6fcd4ce6341a08e
+basis_len: 86
+explain: 原文：Security 類別是偵測可能導致安全性漏洞的威脅與弱點。同一頁：Reliability 是確保並改善關鍵業務應用程式的持續運作；Performance 是提升應用程式速度；Operational excellence 是流程與工作流程效率、資源可管理性與部署最佳做法。
+
+=== az900-c4-002
+type: single
+chapter: az900.all
+objective: C.4
+skill: 2
+stem: 關於 Azure 服務健康狀態（Azure Service Health）的敘述，下列何者正確？
+1: Azure status 只顯示你自己訂用帳戶內資源的健康狀態
+2: Service health 提供你所使用的 Azure 服務與區域的個人化健康檢視，包括中斷、計劃性維護與健康公告
+3: Resource health 提供全球所有 Azure 服務的整體健康狀態
+4: Azure Service Health 只由單一服務組成
+answer: 2
+source: original-ai
+basis: https://learn.microsoft.com/en-us/azure/service-health/overview
+basis_anchor: #key-components-of-service-health
+basis_section: Key components of Service Health
+basis_hash: 9fb2cc44b3914bdf9d2322ee359491c3ae0e713ccbd20fd788e7cfef6684b052
+basis_len: 200
+explain: 原文：Service health 提供你所使用服務與區域的個人化檢視。同一頁：Azure Service Health 由三個服務組成（選項 4 錯）；Azure status 是所有區域所有 Azure 服務的全球檢視（選項 1 錯）；Resource health 是個別資源的健康資訊（選項 3 錯）。

@@ -20,7 +20,8 @@ const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const PUP_DIR = process.env.PUPPETEER_FROM || join(ROOT, '..', 'JLPT_App');
 const puppeteer = createRequire(join(PUP_DIR, 'package.json'))('puppeteer');
 const PACK = join(ROOT, 'data', 'local', 'import', 'bic-匯入包.json');
-const PUBLIC = ['index.html', 'sw.js', 'manifest.webmanifest', 'css', 'js', 'icons', 'data/manifest.json'];
+const PUBLIC = ['index.html', 'sw.js', 'manifest.webmanifest', 'css', 'js', 'icons', 'data/manifest.json', 'data/q'];
+const AZ = JSON.parse(readFileSync(join(ROOT, 'data', 'q', 'az900.json'), 'utf-8')).questions;
 
 let fails = 0;
 const check = (desc, ok, detail = '') => {
@@ -211,6 +212,7 @@ async function realTest(browser, base, mon) {
   await page.goto(base);
   await waitText(page, '證照題庫練習');
   check('首頁：沒匯入前內控顯示「還沒有題目」', (await text(page)).includes('還沒有題目'));
+  check(`首頁：AZ-900 顯示可練 ${AZ.length} 題（網站附的原創題）`, (await text(page)).includes(`可練 ${AZ.length} 題`), (await text(page)).slice(0, 400));
   await page.evaluate(() => navigator.serviceWorker.ready.then(() => true));
 
   await importPack(page, PACK, pack.counts.active);
@@ -267,12 +269,31 @@ async function realTest(browser, base, mon) {
   check('統計頁：顯示作答次數、依科目與來源分組、這次模擬考', statsText.includes(`作答 ${st2.attempts} 次`) && statsText.includes('依科目') &&
     statsText.includes('依題目來源') && statsText.includes(String(h0.score)), statsText.slice(0, 300));
 
-  // 斷網重開：外殼從快取、題目從 IndexedDB
+  // 頁面離線模式＋真的重新載入（只改 hash 不會重載——2026-10-08 發現先前這一項就是這樣）。
+  // 注意：puppeteer 的離線模式只管頁面，SW 自己的請求仍可能連網；「真的斷線」在二之四（關掉伺服器）驗。
+  await page.evaluate(() => { window.__notReloaded = 1; });
   await page.setOfflineMode(true);
   await page.goto(base + '#/');
-  await waitText(page, `可練 ${pack.counts.active} 題`).then(() => check('斷網重開：首頁照樣顯示題數（離線可用）', true),
-    e => check('斷網重開：首頁照樣顯示題數（離線可用）', false, e.message));
+  await page.reload();
+  await waitText(page, `可練 ${pack.counts.active} 題`).then(() => check('頁面離線模式重新載入：首頁照樣顯示內控題數', true),
+    e => check('頁面離線模式重新載入：首頁照樣顯示內控題數', false, e.message));
+  check('頁面離線模式重新載入：頁面真的重新載入了（記號已消失）', await page.evaluate(() => window.__notReloaded === undefined));
   await page.setOfflineMode(false);
+  // AZ-900 練 3 題：作答前有原創標示＋大綱節次、作答後有依據網址（文字）、卡片裡沒有連結
+  await page.goto(base + '#/practice?cert=az900&mode=practice&count=3');
+  await page.waitForSelector('.card.q .stem');
+  const azBefore = await page.$eval('.card.q', e => e.innerText);
+  check('AZ-900：作答前標「原創練習題，不是考題」＋官方大綱節次與細項', /原創練習題，不是考題・官方大綱 [ABC]\.\d（第 \d 細項）/.test(azBefore), azBefore.slice(0, 120));
+  check('AZ-900：作答前不顯示依據', !azBefore.includes('依據'), azBefore.slice(0, 200));
+  await page.click('.opt[data-k="1"]');
+  await page.waitForSelector('.feedback:not([hidden])');
+  const azStem = await page.$eval('.stem', e => e.textContent);
+  const azQ = AZ.find(x => x.stem === azStem);
+  const azFb = await page.$eval('.feedback', e => e.innerText);
+  const azWant = `依據（官方文件）：${azQ.basis}${azQ.basis_anchor !== '#' ? azQ.basis_anchor : ''}`;
+  check('AZ-900：作答後顯示這一題的依據網址＋錨點、解析，正解編號與題庫一致', azFb.includes(azWant) && azFb.includes(azQ.explain.slice(0, 20)) &&
+    (azFb.includes('答對了') ? azQ.answer === 1 : azFb.includes(`正解是 (${azQ.answer})`)), azFb.slice(0, 300));
+  check('AZ-900：題目卡片裡沒有任何連結（依據不是可點的）', (await page.$$eval('.card.q a', a => a.length)) === 0);
 
   const recs = mon.since(i0);
   const bad = mon.bad(recs);
@@ -304,6 +325,170 @@ async function realTest(browser, base, mon) {
   } finally {
     rmSync(fakePath, { force: true });
     await ctx2.close();
+  }
+}
+
+// ---------------------------------------------------------------- 二之二、模擬考完整實跑＋時間到自動交卷
+// 頁面載入前把 Date.now 包一層，可以往前撥時間（App 的計時全部用 Date.now），不必真的等 60 分鐘
+async function examTest(browser, base) {
+  console.log('== 二之二、模擬考完整實跑＋時間到自動交卷');
+  const pack = JSON.parse(readFileSync(PACK, 'utf-8'));
+  const key = (stem, opts) => [stem, ...opts].join('|');
+  const ans = new Map(pack.questions.filter(q => !q.dupOf).map(q => [key(q.stem, q.options), q.answer]));
+  const ctx = await browser.createBrowserContext();
+  const errors = [];
+  const page = await newPage(ctx, errors);
+  await page.evaluateOnNewDocument(() => {
+    const real = Date.now.bind(Date);
+    let skew = 0;
+    Date.now = () => real() + skew;
+    window.__skip = ms => { skew += ms; };
+  });
+  const secs = t => t.replace('剩 ', '').split(':').map(Number).reduce((a, b) => a * 60 + b, 0);
+  const examHist = () => page.evaluate(() => new Promise(r => { const q = indexedDB.open('certquiz'); q.onsuccess = () => {
+    const g = q.result.transaction('meta').objectStore('meta').get('examHistory'); g.onsuccess = () => r(g.result ? g.result.v : []); }; }));
+  try {
+    await page.goto(base);
+    await waitText(page, '證照題庫練習');
+    await importPack(page, PACK, pack.counts.active);
+
+    // A. 實務 80 題全部作答：前 56 題答對、後 24 題答錯 → 56 × 1.25 ＝ 70 分，剛好在及格線上
+    await page.goto(base + '#/exam?cert=bic&subject=gen');
+    await (await page.waitForSelector('button::-p-text(開始考試)')).click();
+    await page.waitForSelector('.clock');
+    const c0 = await page.$eval('.clock', e => e.textContent);
+    check(`實務模擬考：起點是 90 分鐘（${c0}）`, secs(c0) <= 5400 && secs(c0) > 5390, c0);
+    let unknown = 0;
+    for (let n = 0; n < 80; n++) {
+      const cur = await page.evaluate(() => ({ stem: document.querySelector('.stem').textContent,
+        opts: [...document.querySelectorAll('.opt span:last-child')].map(e => e.textContent) }));
+      const a = ans.get(key(cur.stem, cur.opts));
+      if (!a) unknown++;
+      const pick = n < 56 ? a : (a % 4) + 1;
+      await page.click(`.opt[data-k="${pick}"]`);
+      if (n < 79) await page.click('button::-p-text(下一題)');
+    }
+    check('實務模擬考：80 題都在匯入包裡找得到正解（題幹＋選項逐字）', unknown === 0, `${unknown} 題找不到`);
+    await page.click('.sticky button::-p-text(交卷)');
+    await page.waitForSelector('a.btn.primary::-p-text(再考一次)');
+    const headA = await page.$eval('h2', e => e.textContent);
+    const hA = (await examHist())[0] || {};
+    check(`實務模擬考：全部答完直接交卷、不跳確認；成績 ${hA.score} 分（56 對 × 1.25）＝70，剛好及格`,
+      hA.count === 80 && hA.correct === 56 && hA.unanswered === 0 && hA.score === 70 && hA.passed === true && hA.timeUp === false &&
+      headA.includes('70 分（及格）'), `${headA}｜${JSON.stringify(hA)}`);
+
+    // B. 法規 50 題：答 10 題（全對）後時間到 → 自動交卷
+    await page.goto(base + '#/exam?cert=bic&subject=law');
+    await (await page.waitForSelector('button::-p-text(開始考試)')).click();
+    await page.waitForSelector('.clock');
+    for (let n = 0; n < 10; n++) {
+      const cur = await page.evaluate(() => ({ stem: document.querySelector('.stem').textContent,
+        opts: [...document.querySelectorAll('.opt span:last-child')].map(e => e.textContent) }));
+      await page.click(`.opt[data-k="${ans.get(key(cur.stem, cur.opts))}"]`);
+      await page.click('button::-p-text(下一題)');
+    }
+    // 驗尺：撥快 10 分鐘，畫面上的倒數必須跟著少 10 分鐘——證明撥時間真的影響 App 的計時
+    const before = secs(await page.$eval('.clock', e => e.textContent));
+    await page.evaluate(() => window.__skip(10 * 60 * 1000));
+    await sleep(1500);
+    const after = secs(await page.$eval('.clock', e => e.textContent));
+    const rulerOk = before - after >= 600 && before - after <= 603;
+    check(`驗尺：撥快 10 分鐘，倒數從 ${before} 秒變 ${after} 秒`, rulerOk);
+    if (!rulerOk) return false;
+    await page.evaluate(() => window.__skip(60 * 60 * 1000));
+    const done = await page.waitForSelector('a.btn.primary::-p-text(再考一次)', { timeout: 5000 }).then(() => true, () => false);
+    check('法規模擬考：時間到之後 5 秒內出現成績頁（自動交卷）', done);
+    if (!done) return true;
+    const bodyB = await text(page);
+    const hB = (await examHist())[0] || {};
+    check(`法規模擬考：時間到自動交卷；10 題對 × 2 ＝ ${hB.score} 分、未作答 ${hB.unanswered} 題、用時 ${hB.usedSec} 秒`,
+      hB.timeUp === true && hB.count === 50 && hB.correct === 10 && hB.unanswered === 40 && hB.score === 20 && hB.passed === false &&
+      hB.usedSec === 3600 && bodyB.includes('時間到自動交卷') && bodyB.includes('20 分（不及格）'), `${JSON.stringify(hB)}｜${bodyB.slice(0, 200)}`);
+    check('模擬考：沒有頁面錯誤', errors.length === 0, errors.join('；'));
+    return true;
+  } finally {
+    await ctx.close();
+  }
+}
+
+// ---------------------------------------------------------------- 二之四、SW 安裝時就把網站附的題庫存進快取
+// 隔離：探針頁只註冊 SW、不跑 App，所以快取裡的題庫只可能是 SW 安裝時自己存的。
+// （2026-10-08：原本在實測裡驗「離線時 AZ 可練」，拿掉安裝時快取也照樣綠——App 讀題庫時 SW 多半已接手、順手快取了，量到的是時機不是這個功能。）
+async function swInstallTest(browser) {
+  console.log('== 二之四、真的斷線（關掉伺服器）：SW 安裝時就存好網站附的題庫，匯入的題目在 IndexedDB');
+  const pack = JSON.parse(readFileSync(PACK, 'utf-8'));
+  const site = makeSite(addProbe);
+  const { proc, origin } = await serve(site);
+  const base = origin + '/';
+  const ctx = await browser.createBrowserContext();
+  let alive = true;
+  try {
+    const page = await newPage(ctx, []);
+    await page.goto(base + 'sw-probe.html');
+    await page.waitForFunction(() => window.__swReady === true, { timeout: 20000 });
+    const keys = await page.evaluate(async () => {
+      const out = [];
+      for (const k of await caches.keys()) for (const r of await (await caches.open(k)).keys()) out.push(new URL(r.url).pathname);
+      return out;
+    });
+    check('探針頁（不跑 App）之後，SW 快取裡已有 data/q/az900.json', keys.some(k => k.endsWith('/data/q/az900.json')), keys.join('、'));
+    // 只用探針頁裝好 SW；App 第一次開就直接匯入內控題，之後斷線
+    await page.goto(base + '#/settings');
+    await importPack(page, PACK, pack.counts.active);
+    proc.kill(); alive = false;
+    await sleep(300);
+    // 驗尺：伺服器真的關了——一個從沒快取過的檔，經過 SW 也必須拿不到
+    const probe = await page.evaluate(() => fetch('never-cached-' + Math.random() + '.txt').then(r => 'reached ' + r.status, () => 'offline'));
+    const rulerOk = probe === 'offline';
+    check(`驗尺：關掉伺服器後，沒快取過的檔拿不到（${probe}）`, rulerOk);
+    if (!rulerOk) return;
+    // 匯入後頁面停在設定頁（設定頁也有「可練 N 題」字樣），先切回首頁再重新載入，題數只在確認是首頁之後判定
+    await page.goto(base + '#/');
+    await page.evaluate(() => { window.__notReloaded = 1; });
+    await page.reload();
+    const home = await waitText(page, '證照題庫練習').then(() => true, () => false);
+    check('真的斷線重新載入：首頁出來了（外殼來自 SW 快取）', home);
+    if (!home) return;
+    const t = await text(page);
+    check('真的斷線重新載入：畫面是首頁（不是設定頁）', !t.includes('匯入題目') || t.includes('開始練習'), t.slice(0, 120));
+    check('真的斷線重新載入：頁面真的重新載入了', await page.evaluate(() => window.__notReloaded === undefined));
+    check(`真的斷線：內控照樣可練 ${pack.counts.active} 題（IndexedDB）`, t.includes(`可練 ${pack.counts.active} 題`), t.slice(0, 300));
+    check(`真的斷線：AZ-900 照樣可練 ${AZ.length} 題（SW 安裝時存的）`, t.includes(`可練 ${AZ.length} 題`), t.slice(0, 300));
+    await page.goto(base + '#/practice?cert=az900&mode=practice&count=2');
+    const ok = await page.waitForSelector('.card.q .stem', { timeout: 10000 }).then(() => true, () => false);
+    check('真的斷線：AZ-900 可以開始練習', ok);
+  } finally {
+    await ctx.close();
+    if (alive) proc.kill();
+    rmSync(site, { recursive: true, force: true });
+  }
+}
+
+function addProbe(dir) {
+  // 探針頁只放在測試用的網站複本裡（不入庫、不部署）：只註冊 SW，不跑 App
+  writeFileSync(join(dir, 'sw-probe.html'),
+    '<!doctype html><meta charset="utf-8"><title>sw probe</title><script>navigator.serviceWorker.register("sw.js")' +
+    '.then(() => navigator.serviceWorker.ready).then(() => { window.__swReady = true; });</script>');
+}
+
+// ---------------------------------------------------------------- 二之三、題庫檔讀不到
+// 某張證照的題庫檔讀不到時，只有那一張卡片顯示錯誤，首頁其他部分照常（2026-10-08 之前會整頁掛掉）
+async function missingBankTest(browser) {
+  console.log('== 二之三、網站附的題庫檔讀不到時，首頁不能整頁掛掉');
+  const site = makeSite(dir => rmSync(join(dir, 'data', 'q'), { recursive: true, force: true }));
+  const { proc, origin } = await serve(site);
+  const ctx = await browser.createBrowserContext();
+  try {
+    const page = await newPage(ctx, []);
+    await page.goto(origin + '/');
+    await waitText(page, '證照題庫練習').then(() => check('題庫檔不存在時首頁照樣出來', true),
+      e => check('題庫檔不存在時首頁照樣出來', false, e.message));
+    const t = await text(page);
+    check('AZ-900 卡片顯示「題庫暫時讀不到」，內控卡片照常', t.includes('題庫暫時讀不到') && t.includes('還沒有題目'), t.slice(0, 300));
+  } finally {
+    await ctx.close();
+    proc.kill();
+    rmSync(site, { recursive: true, force: true });
   }
 }
 
@@ -421,6 +606,12 @@ async function main() {
       return 2;
     }
     await realTest(browser, base, mon);
+    if (!(await examTest(browser, base))) {
+      console.log('TEST-BROWSER ABORT：撥時間的驗尺失敗——「時間到自動交卷」不能下結論');
+      return 2;
+    }
+    await swInstallTest(browser);
+    await missingBankTest(browser);
     await mutationTest(browser);
     code = fails ? 1 : 0;
   } finally {
