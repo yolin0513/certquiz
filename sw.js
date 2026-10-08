@@ -1,6 +1,6 @@
 // Service Worker：讓 App 能離線開、能安裝到主畫面。只處理同一個網站的請求。
 // 改了任何外殼檔（html／css／js／圖示）就要升 VERSION；題庫清單 data/manifest.json 一律先上網拿新的。
-const VERSION = 'certquiz-v0.1.0';
+const VERSION = 'certquiz-v0.2.0';
 const SHELL = [
   './', 'index.html', 'manifest.webmanifest', 'css/app.css',
   'js/app.js', 'js/logic.js', 'js/db.js', 'js/data.js',

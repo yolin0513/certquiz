@@ -110,6 +110,62 @@ export function summarize(attempts) {
   return { answered, correct, rate: answered ? correct / answered : 0 };
 }
 
+// ---------------------------------------------------------------- 模擬考
+/**
+ * 依正式題數出卷：只出可練的題、限定科目、隨機抽 count 題。
+ * 題數不夠就不出（ok=false）——用不足的題數考，分數與及格判斷都沒有意義。
+ */
+export function buildExam(pool, subject, count, seed) {
+  const qs = pool.filter(isActive).filter(q => q.subject === subject);
+  if (qs.length < count) return { ok: false, available: qs.length, questions: [] };
+  return { ok: true, available: qs.length, questions: shuffle(qs, rng(seed)).slice(0, count) };
+}
+
+/**
+ * 計分。answers：Map(qid → 選的 1～4)。exam：{ points, pass }（每題分數、及格分數）。
+ * 分數四捨五入到小數兩位（實務 1.25 分 × 題數）；及格是「分數 ≥ 及格線」。未作答不給分、不倒扣。
+ */
+export function scoreExam(questions, answers, exam) {
+  let correct = 0, unanswered = 0;
+  for (const q of questions) {
+    const a = answers.get(q.id);
+    if (a === undefined) unanswered++;
+    else if (a === q.answer) correct++;
+  }
+  const score = Math.round(correct * exam.points * 100) / 100;
+  return { total: questions.length, correct, wrong: questions.length - correct - unanswered, unanswered,
+    score, passed: score >= exam.pass };
+}
+
+export function remainingMs(deadline, now) {
+  return Math.max(0, deadline - now);
+}
+
+/** 毫秒 → 「mm:ss」或「h:mm:ss」 */
+export function formatClock(ms) {
+  const s = Math.ceil(ms / 1000);
+  const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), r = s % 60;
+  const pad = n => String(n).padStart(2, '0');
+  return h ? `${h}:${pad(m)}:${pad(r)}` : `${pad(m)}:${pad(r)}`;
+}
+
+// ---------------------------------------------------------------- 統計
+/** 依科目或來源分組的答對率。attempts：[{qid, correct}]；byId：Map(qid → 題目)；keyOf：題目 → 分組鍵 */
+export function groupRate(attempts, byId, keyOf) {
+  const out = new Map();
+  for (const a of attempts) {
+    const q = byId.get(a.qid);
+    if (!q) continue;
+    const k = keyOf(q);
+    const g = out.get(k) || { answered: 0, correct: 0 };
+    g.answered++;
+    if (a.correct) g.correct++;
+    out.set(k, g);
+  }
+  for (const g of out.values()) g.rate = g.answered ? g.correct / g.answered : 0;
+  return out;
+}
+
 /** 題目的出處說明（畫面顯示用） */
 export function sourceLabel(q) {
   const where = q.period ? `第 ${q.period} 期第 ${q.qno} 題` : '';

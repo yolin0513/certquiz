@@ -227,6 +227,46 @@ async function realTest(browser, base, mon) {
   check(`IndexedDB：匯入的題目 ${pack.counts.total} 題都在`, st.user === pack.counts.total, JSON.stringify(st));
   check('重複題（dupOf）沒有被出題', st.dupAnswered === 0, JSON.stringify(st));
 
+  // 模擬考：法規 50 題，答 45 題、留 5 題不答，交卷
+  await page.goto(base + '#/exam?cert=bic&subject=law');
+  await (await page.waitForSelector('button::-p-text(開始考試)')).click();
+  await page.waitForSelector('.clock');
+  const c1 = await page.$eval('.clock', e => e.textContent);
+  await sleep(2200);
+  const c2 = await page.$eval('.clock', e => e.textContent);
+  const secs = t => { const p = t.replace('剩 ', '').split(':').map(Number); return p.reduce((a, b) => a * 60 + b, 0); };
+  check(`模擬考：計時器在倒數（${c1} → ${c2}），起點是 60 分鐘`, secs(c1) <= 3600 && secs(c1) > 3590 && secs(c2) < secs(c1), `${c1} → ${c2}`);
+  for (let n = 0; n < 45; n++) {
+    await page.click('.opt[data-k="1"]');
+    if (n === 0) {
+      const leaked = await page.$$eval('.opt.right, .opt.wrong, .feedback', els => els.length);
+      check('模擬考：作答中不顯示對錯', leaked === 0, `出現 ${leaked} 個對錯標示`);
+    }
+    await page.click('button::-p-text(下一題)');
+  }
+  await page.click('.sticky button::-p-text(交卷)');
+  await waitText(page, '還有 5 題未作答');
+  check('模擬考：還有未答題時要再確認一次', true);
+  await page.click('button::-p-text(確定交卷)');
+  await page.waitForSelector('a.btn.primary::-p-text(再考一次)').catch(async e => {
+    console.log(`  頁面錯誤：${errors.join('；') || '無'}｜畫面：${(await text(page)).slice(0, 200)}`);
+    throw e;
+  });
+  const head = await page.$eval('h2', e => e.textContent);
+  const st2 = await idbState(page);
+  const hist = await page.evaluate(() => new Promise(r => { const q = indexedDB.open('certquiz'); q.onsuccess = () => {
+    const g = q.result.transaction('meta').objectStore('meta').get('examHistory'); g.onsuccess = () => r(g.result ? g.result.v : []); }; }));
+  const h0 = hist[0] || {};
+  check(`模擬考：成績頁（${head}）＝紀錄（${h0.correct} 題對 × 2 分＝${h0.score}）`,
+    h0.count === 50 && h0.unanswered === 5 && h0.score === h0.correct * 2 && head.includes(`${h0.score} 分`) && head.includes(h0.passed ? '（及格）' : '（不及格）'),
+    `${head}｜${JSON.stringify(h0)}`);
+  check('模擬考：未作答的 5 題不寫作答紀錄（作答多 45 筆）', st2.attempts === st.attempts + 45, `${st.attempts} → ${st2.attempts}`);
+  await page.goto(base + '#/stats?cert=bic');
+  await waitText(page, '最近的模擬考');
+  const statsText = await text(page);
+  check('統計頁：顯示作答次數、依科目與來源分組、這次模擬考', statsText.includes(`作答 ${st2.attempts} 次`) && statsText.includes('依科目') &&
+    statsText.includes('依題目來源') && statsText.includes(String(h0.score)), statsText.slice(0, 300));
+
   // 斷網重開：外殼從快取、題目從 IndexedDB
   await page.setOfflineMode(true);
   await page.goto(base + '#/');

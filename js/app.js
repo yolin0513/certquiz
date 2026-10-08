@@ -63,7 +63,11 @@ async function homeView(gen) {
         h('p', { class: 'stat' }, `已作答 ${s.answered} 次，答對率 ${s.answered ? pct(s.rate) : '—'}，錯題 ${mistakes.length} 題`),
         h('div', { class: 'row' },
           h('a', { class: 'btn primary', href: `#/setup?cert=${c.id}`, text: '開始練習' }),
-          h('a', { class: 'btn', href: `#/practice?cert=${c.id}&mode=mistakes&count=20`, 'aria-disabled': mistakes.length ? null : 'true', text: `錯題複習（${mistakes.length}）` })));
+          h('a', { class: 'btn', href: `#/practice?cert=${c.id}&mode=mistakes&count=20`, 'aria-disabled': mistakes.length ? null : 'true', text: `錯題複習（${mistakes.length}）` })),
+        h('div', { class: 'row' },
+          c.subjects.filter(s => s.exam).map(s => h('a', { class: 'btn', href: `#/exam?cert=${c.id}&subject=${s.id}`,
+            text: `模擬考：${s.name.replace(/^銀行內部控制與內部稽核/, '') || s.name}` })),
+          h('a', { class: 'btn', href: `#/stats?cert=${c.id}`, text: '統計' })));
     }
     cards.push(h('section', { class: 'card' }, h('h2', { text: c.name }), h('p', { class: 'notice', text: c.notice }), ...body));
   }
@@ -163,6 +167,145 @@ async function practiceView(gen, q) {
   showQuestion();
 }
 
+// ---------------------------------------------------------------- 模擬考
+// 照正式規格：題數、時間、每題分數、及格線都讀 certs.json 的 exam 設定。作答中不顯示對錯；時間到自動交卷。
+// 未作答的題不寫作答紀錄（JLPT 的決定：沒作答不代表不會）。進行中的考試離開頁面就作廢（M2 第一版的限制）。
+async function examView(gen, q) {
+  const certId = q.get('cert');
+  const subjectId = q.get('subject');
+  const { cert, questions } = await loadPool(certId);
+  const subject = cert.subjects.find(s => s.id === subjectId);
+  if (!subject || !subject.exam) { render(gen, h('p', { text: '這個科目沒有模擬考設定。' })); return; }
+  const ex = subject.exam;
+  const built = L.buildExam(questions, subjectId, ex.count, Date.now());
+  const back = h('a', { class: 'back', href: '#/', text: '← 回首頁' });
+  if (!built.ok) {
+    render(gen, back, h('section', { class: 'card' }, h('h2', { text: `模擬考：${subject.name}` }),
+      h('p', { text: `可出的題目只有 ${built.available} 題，不足正式的 ${ex.count} 題，無法出卷。` })));
+    return;
+  }
+  render(gen, back, h('section', { class: 'card' }, h('h2', { text: `模擬考：${subject.name}` }),
+    h('ul', {}, h('li', { text: `${ex.count} 題四選一，${ex.minutes} 分鐘` }), h('li', { text: `每題 ${ex.points} 分，${ex.pass} 分及格；答錯不倒扣` }),
+      h('li', { text: '作答中不顯示對錯；可以改答案、跳題' }), h('li', { text: '時間到自動交卷；中途離開這一頁，這次考試就作廢' })),
+    h('button', { class: 'btn primary', type: 'button', text: '開始考試', onclick: () => start() })));
+
+  function start() {
+    const qs = built.questions;
+    const answers = new Map();
+    const startAt = Date.now();
+    const deadline = startAt + ex.minutes * 60000;
+    let i = 0, finished = false;
+    const clock = h('span', { class: 'clock' });
+    const counter = h('span', { class: 'muted' });
+    const body = h('section', { class: 'card q' });
+    const grid = h('div', { class: 'grid' });
+    const confirmBox = h('div', { class: 'confirm', hidden: true });
+    const tick = () => {
+      if (gen !== generation) { clearInterval(timer); return; }   // 已經離開這一頁：停表，這次作廢
+      const left = L.remainingMs(deadline, Date.now());
+      clock.textContent = `剩 ${L.formatClock(left)}`;
+      if (left === 0) finish(true);
+    };
+    const timer = setInterval(tick, 1000);
+
+    const drawGrid = () => grid.replaceChildren(...qs.map((x, n) => h('button', {
+      type: 'button', class: `cell${answers.has(x.id) ? ' done' : ''}${n === i ? ' cur' : ''}`, text: String(n + 1),
+      onclick: () => { i = n; show(); } })));
+
+    function show() {
+      const item = qs[i];
+      counter.textContent = `已答 ${answers.size}／${qs.length}`;
+      body.replaceChildren(
+        h('p', { class: 'muted', text: `第 ${i + 1} 題` }), h('p', { class: 'stem', text: item.stem }),
+        h('div', { class: 'opts' }, item.options.map((t, k) => h('button', {
+          type: 'button', class: `opt${answers.get(item.id) === k + 1 ? ' picked' : ''}`, 'data-k': k + 1,
+          onclick: () => { answers.set(item.id, k + 1); show(); } }, h('span', { class: 'k', text: `(${k + 1})` }), h('span', { text: t })))),
+        h('div', { class: 'row' },
+          h('button', { class: 'btn', type: 'button', text: '上一題', disabled: i === 0, onclick: () => { i--; show(); } }),
+          h('button', { class: 'btn', type: 'button', text: '下一題', disabled: i === qs.length - 1, onclick: () => { i++; show(); } })));
+      drawGrid();
+    }
+
+    function askSubmit() {
+      const left = qs.length - answers.size;
+      if (left === 0) { finish(false); return; }
+      confirmBox.replaceChildren(h('p', { text: `還有 ${left} 題未作答，未作答不給分。確定交卷？` }),
+        h('div', { class: 'row' }, h('button', { class: 'btn primary', type: 'button', text: '確定交卷', onclick: () => finish(false) }),
+          h('button', { class: 'btn', type: 'button', text: '繼續作答', onclick: () => { confirmBox.hidden = true; } })));
+      confirmBox.hidden = false;
+    }
+
+    async function finish(timeUp) {
+      if (finished) return;
+      finished = true;
+      clearInterval(timer);
+      const r = L.scoreExam(qs, answers, ex);
+      const usedSec = Math.round((Math.min(Date.now(), deadline) - startAt) / 1000);
+      for (const item of qs) {
+        const k = answers.get(item.id);
+        if (k === undefined) continue;
+        const prev = await DB.get('mistakes', item.id);
+        await DB.recordAnswer({ q: item, chosen: k, correct: k === item.answer, mode: 'exam',
+          mistakeState: L.nextMistakeState(prev, k === item.answer, 'exam', Date.now()) });
+      }
+      const hist = await DB.getMeta('examHistory', []);
+      hist.unshift({ cert: certId, subject: subjectId, ts: Date.now(), count: qs.length, correct: r.correct,
+        unanswered: r.unanswered, score: r.score, passed: r.passed, usedSec, timeUp });
+      await DB.setMeta('examHistory', hist.slice(0, 30));
+      const missed = qs.filter(x => answers.get(x.id) !== x.answer);
+      render(gen,
+        h('section', { class: 'card' },
+          h('h2', { class: r.passed ? 'ok' : 'ng', text: `${subject.name}：${r.score} 分（${r.passed ? '及格' : '不及格'}）` }),
+          h('p', { text: `答對 ${r.correct}、答錯 ${r.wrong}、未作答 ${r.unanswered}／${r.total} 題；及格線 ${ex.pass} 分` }),
+          h('p', { class: 'muted', text: `${timeUp ? '時間到自動交卷' : '交卷'}，用時 ${L.formatClock(usedSec * 1000)}` }),
+          h('div', { class: 'row' }, h('a', { class: 'btn primary', href: `#/exam?cert=${certId}&subject=${subjectId}`, text: '再考一次' }),
+            h('a', { class: 'btn', href: '#/', text: '回首頁' }))),
+        missed.length ? h('section', { class: 'card' }, h('h3', { text: `答錯與未作答（${missed.length} 題）` }),
+          h('ol', { class: 'wronglist' }, missed.map(x => h('li', {},
+            h('p', { text: x.stem }),
+            h('p', { class: 'muted', text: `${answers.has(x.id) ? `你選 (${answers.get(x.id)})` : '未作答'}，正解 (${x.answer}) ${x.options[x.answer - 1]}` }),
+            h('p', { class: 'src', text: L.sourceLabel(x) }))))) : null);
+    }
+
+    // 確認框放在固定於頂端的那一塊裡：捲到下面按「交卷」時，確認框才看得到（放在頁首會被固定列蓋住、看不到）
+    render(gen,
+      h('div', { class: 'sticky' },
+        h('div', { class: 'bar' }, clock, counter, h('button', { class: 'btn primary', type: 'button', text: '交卷', onclick: askSubmit })),
+        confirmBox),
+      body, h('section', { class: 'card' }, h('p', { class: 'muted', text: '題號（深色＝已作答）' }), grid));
+    tick();
+    show();
+  }
+}
+
+// ---------------------------------------------------------------- 統計
+async function statsView(gen, q) {
+  const certId = q.get('cert');
+  const { cert, questions } = await loadPool(certId);
+  const byId = new Map(questions.map(x => [x.id, x]));
+  const attempts = await DB.getAll('attempts', certId);
+  const mistakes = await DB.getAll('mistakes', certId);
+  const s = L.summarize(attempts);
+  const subjName = new Map(cert.subjects.map(x => [x.id, x.name]));
+  const srcName = { 'tabf-official': '官網下載的', 'user-import': '我自己提供的', 'original-ai': '原創題', 'original-human': '原創題' };
+  const table = (title, m, name) => h('section', { class: 'card' }, h('h3', { text: title }),
+    m.size ? h('table', {}, h('tr', {}, h('th', { text: '' }), h('th', { text: '作答' }), h('th', { text: '答對率' })),
+      [...m].map(([k, g]) => h('tr', {}, h('td', { text: name(k) }), h('td', { text: String(g.answered) }), h('td', { text: pct(g.rate) }))))
+      : h('p', { class: 'muted', text: '還沒有作答紀錄。' }));
+  const hist = (await DB.getMeta('examHistory', [])).filter(x => x.cert === certId).slice(0, 10);
+  render(gen, h('a', { class: 'back', href: '#/', text: '← 回首頁' }),
+    h('section', { class: 'card' }, h('h2', { text: `${cert.short} 統計` }),
+      h('p', { text: `作答 ${s.answered} 次、答對率 ${s.answered ? pct(s.rate) : '—'}、錯題本 ${mistakes.length} 題` }),
+      h('p', { class: 'muted', text: '作答次數含練習與模擬考；同一題做多次會算多次。' })),
+    table('依科目', L.groupRate(attempts, byId, x => x.subject), k => subjName.get(k) || k),
+    table('依題目來源', L.groupRate(attempts, byId, x => x.source), k => srcName[k] || k),
+    h('section', { class: 'card' }, h('h3', { text: '最近的模擬考' }),
+      hist.length ? h('table', {}, h('tr', {}, ['日期', '科目', '分數', '結果'].map(t => h('th', { text: t }))),
+        hist.map(x => h('tr', {}, h('td', { text: new Date(x.ts).toLocaleDateString('zh-TW') }), h('td', { text: subjName.get(x.subject) || x.subject }),
+          h('td', { text: String(x.score) }), h('td', { class: x.passed ? 'ok' : 'ng', text: x.passed ? '及格' : '不及格' }))))
+        : h('p', { class: 'muted', text: '還沒有模擬考紀錄。' })));
+}
+
 // ---------------------------------------------------------------- 設定：匯入題目
 async function settingsView(gen) {
   const m = await loadManifest();
@@ -216,6 +359,8 @@ async function route() {
     if (path === '/' || path === '') await homeView(gen);
     else if (path === '/setup') await setupView(gen, q);
     else if (path === '/practice') await practiceView(gen, q);
+    else if (path === '/exam') await examView(gen, q);
+    else if (path === '/stats') await statsView(gen, q);
     else if (path === '/settings') await settingsView(gen);
     else go('#/');
   } catch (e) {
