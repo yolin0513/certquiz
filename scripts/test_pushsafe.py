@@ -47,8 +47,17 @@ def remote_main(bare):
     return r.stdout.decode().strip() or None
 
 
+def git_bash():
+    """Windows 上 subprocess 叫 "bash" 會先找到 System32 的 WSL bash（沒裝發行版就跑不起來），
+    所以明確用 shutil.which 找到的完整路徑（Git Bash）。2026-10-08 踩過：五個情境全都沒跑起來。"""
+    p = shutil.which("bash")
+    if not p:
+        raise RuntimeError("找不到 bash")
+    return p
+
+
 def pushsafe(work):
-    r = sh(["bash", "scripts/pushsafe.sh", "origin"], work, check=False)
+    r = sh([git_bash(), "scripts/pushsafe.sh", "origin"], work, check=False)
     out = r.stdout.decode("utf-8", "replace")
     last = [ln for ln in out.splitlines() if ln.startswith("PUSHSAFE:")][-1:] or ["(沒有 PUSHSAFE 輸出)"]
     return r.returncode, last[0]
@@ -73,7 +82,8 @@ def main():
             sh(["git", "config", k, v], work)
         print(f"• 暫存 clone 的 origin 已換成假遠端（真 repo 的 origin 沒有被碰）")
 
-        def case(desc, expect_rc, setup=None, expect_remote=None):
+        def case(desc, expect_rc, reason, setup=None, expect_remote=None):
+            """reason：最後一行 PUSHSAFE 輸出必須含的字。只看回傳值不夠——腳本沒跑起來也會回 1。"""
             nonlocal fails
             before = remote_main(bare)
             if setup:
@@ -81,16 +91,20 @@ def main():
             rc, last = pushsafe(work)
             after = remote_main(bare)
             want = expect_remote(before) if expect_remote else before
-            ok = rc == expect_rc and after == want
+            if not last.startswith("PUSHSAFE:"):
+                print(f"⊘ {desc}：情境未成立（腳本沒有 PUSHSAFE 輸出，回傳 {rc}）")
+                fails += 1
+                return
+            ok = rc == expect_rc and after == want and reason in last
             print(f"{'✓' if ok else '✗'} {desc}：回傳 {rc}（預期 {expect_rc}），假遠端 {'有變' if after != before else '沒變'}｜{last}")
             fails += 0 if ok else 1
 
         head = lambda: sh(["git", "rev-parse", "HEAD"], work).stdout.decode().strip()
-        case("A 乾淨 → 推上去", 0, expect_remote=lambda _b: head())
+        case("A 乾淨 → 推上去", 0, "推送成功", expect_remote=lambda _b: head())
 
         def dirty():
             (work / "stray.txt").write_text("x", encoding="utf-8")
-        case("B 工作區不乾淨 → 擋", 1, dirty)
+        case("B 工作區不乾淨 → 擋", 1, "工作區不乾淨", dirty)
         (work / "stray.txt").unlink()
 
         def pdf_in_history():
@@ -99,19 +113,19 @@ def main():
             sh(["git", "commit", "-q", "--no-verify", "-m", "leak"], work)
             sh(["git", "rm", "-q", "docs/leak.txt"], work)
             sh(["git", "commit", "-q", "--no-verify", "-m", "rm leak"], work)
-        case("C 繞過 hook commit 過 PDF（已刪）→ 歷史掃描擋", 1, pdf_in_history)
+        case("C 繞過 hook commit 過 PDF（已刪）→ 歷史掃描擋", 1, "selfcheck.py --history 沒過", pdf_in_history)
         sh(["git", "reset", "-q", "--hard", "HEAD~2"], work)
 
         def beacon():
             (work / "js" / "x.js").write_text("navigator.sendBeacon('data/x', d);\n", encoding="utf-8")
             sh(["git", "add", "js/x.js"], work)
             sh(["git", "commit", "-q", "--no-verify", "-m", "beacon"], work)
-        case("D 繞過 hook commit 了 sendBeacon → 隱私檢查擋", 1, beacon)
+        case("D 繞過 hook commit 了 sendBeacon → 隱私檢查擋", 1, "check_privacy.py 沒過", beacon)
         sh(["git", "reset", "-q", "--hard", "HEAD~1"], work)
 
         def detach():
             sh(["git", "checkout", "-q", "--detach"], work)
-        case("E HEAD 不在 main → 擋", 1, detach)
+        case("E HEAD 不在 main → 擋", 1, "HEAD 不在 main", detach)
     finally:
         rmtree(tmp)
         if tmp.exists():
