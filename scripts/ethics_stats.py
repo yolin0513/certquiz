@@ -435,7 +435,7 @@ def render(st, diff, old, new):
             sec.append('<h4>常常是「對的」敘述</h4>' + ranked(L["true"], [txt, c_t, c_f], rb.get("true"), None))
             sec.append('<h4>常常是「錯的」敘述</h4>' + ranked(L["false"], [txt, c_f, c_t], rb.get("false"), None))
         else:
-            sec.append(f'<p class="warn-line">題型分類的驗尺沒有過（見最後一節），所以這裡不換算對錯，只列「當正解／當誘答」。注意：在問「哪個錯」的題目裡，正解是一句錯的敘述。</p>')
+            sec.append(f'<p class="warn-line">這個問題這一輪也答不了：題型分類的驗尺{"兩輪都" if st.get("round") == 2 else ""}沒有過（見最後一節），所以這裡不換算對錯，只列「當正解／當誘答」。注意：在問「哪個錯」的題目裡，正解是一句錯的敘述。</p>')
         cc = st.get("combo_cmp", {})
         def downgrade(name):
             v = cc.get(f"{part}-{name}")
