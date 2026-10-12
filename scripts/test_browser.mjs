@@ -497,9 +497,11 @@ async function examTest(browser, base) {
     await gotoView(page, base + '#/exam?cert=bic&subject=law');
     await (await page.waitForSelector('button::-p-text(開始考試)')).click();
     await page.waitForSelector('.clock');
+    const seenC = [];
     for (let n = 0; n < 50; n++) {
       const cur = await page.evaluate(() => ({ stem: document.querySelector('.stem').textContent,
         opts: [...document.querySelectorAll('.opt span:last-child')].map(e => e.textContent) }));
+      seenC.push(cur);
       await page.click(`.opt[data-k="${ans.get(key(cur.stem, cur.opts))}"]`);
       if (n < 49) await page.click('button::-p-text(下一題)');
     }
@@ -507,6 +509,17 @@ async function examTest(browser, base) {
     await page.waitForSelector('a.btn.primary::-p-text(再考一次)');
     await sleep(200);
     const bodyC = await text(page);
+    {
+      // 法規修正（成績頁）：全部答對也要列出修正過的題（一次對完整份答案時最容易把正解記起來）；四類分開、數字＝這份考卷從匯入包數出來的
+      const its = seenC.map(c => pack.questions.find(x => !x.dupOf && x.stem === c.stem && x.options.join('|') === c.opts.join('|')));
+      const st = s => its.filter(x => x && x.law && x.law.status === s).length;
+      const amdNo = its.map((x, i) => x && x.law && x.law.status === 'amended' ? i + 1 : 0).filter(Boolean);
+      const card = await page.$eval('.exam-law', c => ({ t: c.innerText, li: [...c.querySelectorAll('li')].map(l => l.textContent) })).catch(() => null);
+      check(`法規修正（成績頁）：這份 50 題修正過 ${st('amended')}、沒修正 ${st('unchanged')}、一部分 ${st('partial')}、沒資料 ${st('none')}——卡片的數字與逐題清單（第 ${amdNo.join('、')} 題）都對得上，全部答對也列`,
+        its.every(Boolean) && !!card && card.t.includes(`這份 50 題：考試後修正過 ${st('amended')} 題；查得到、考試後沒修正 ${st('unchanged')} 題；`)
+        && card.t.includes(`沒有版本資料 ${st('none')} 題`) && card.li.length === amdNo.length && amdNo.every((no, k) => card.li[k].startsWith(`第 ${no} 題（答對）`)),
+        card ? card.t.slice(0, 200) : '沒有法規修正卡');
+    }
     check('法規模擬考全部答對：100 分及格、沒有「答錯與未作答」區塊、畫面沒有多出 null', bodyC.includes('100 分（及格）') &&
       !bodyC.includes('答錯與未作答') && BAD_TEXT.length === nC, `${bodyC.slice(0, 200)}｜${BAD_TEXT.slice(nC).map(x => x.t).join('；')}`);
     check('模擬考：沒有頁面錯誤', errors.length === 0, errors.join('；'));
@@ -804,9 +817,12 @@ async function importStudyTest(browser, base) {
       bcards.length === want.length && bcards.every(n => n === 1));
     {
       const amd = want.filter(x => x.law && x.law.status === 'amended').length;
-      const got = await page.$$eval('.study-q', cs => cs.map(c => [!!c.querySelector('.law-note'), !!c.querySelector('.law-note.amended')]));
-      check(`法規修正標示（期別頁）：法規第 47 期醒目框 ${got.filter(g => g[1]).length} 題＝匯入包裡修正過的 ${amd} 題；每題都有法規說明`,
-        amd > 0 && got.filter(g => g[1]).length === amd && got.every(g => g[0]));
+      const got = await page.$$eval('.study-q', cs => cs.map(c => [!!c.querySelector('.law-note'), !!c.querySelector('.law-note.amended'),
+        c.querySelector('.stem').textContent, c.querySelector('.law-note')?.className || '']));
+      const cls = got.map(g => { const it = want.find(x => x.stem === g[2]); return !!it && !!it.law && g[3].split(' ').includes(it.law.status); });
+      const kinds = [...new Set(want.map(x => x.law && x.law.status))];
+      check(`法規修正標示（期別頁）：法規第 47 期醒目框 ${got.filter(g => g[1]).length} 題＝匯入包裡修正過的 ${amd} 題；每題都有法規說明，而且樣式分得出是哪一類（這一期有 ${kinds.join('、')}）`,
+        amd > 0 && got.filter(g => g[1]).length === amd && got.every(g => g[0]) && cls.every(Boolean) && kinds.length >= 3);
     }
     // 讀過這一期再練：作答紀錄標 studied=true
     await (await page.waitForSelector('a.btn.primary::-p-text(讀完了，練這)')).click();

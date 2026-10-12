@@ -91,3 +91,11 @@ details summary { cursor: pointer; margin: 6px 0; }
 .law-limits { padding-left: 1.2em; margin: 8px 0; }
 .law-limits li { margin: 6px 0; }
 .law-pre { margin-top: 0; }
+.law-exam-list { padding-left: 1.2em; margin: 8px 0; }
+.law-exam-list li { margin: 4px 0; }
+/* 四類分得出來：查過沒修正＝綠字開頭；只查到一部分／沒查到＝虛線框，表示「不知道」 */
+.law-tag { margin-right: 4px; }
+.law-tag.unchanged { color: var(--ok); }
+.law-tag.partial, .law-tag.none { color: var(--fg); }
+.law-note.partial, .law-note.none { border: 1px dashed var(--muted); border-radius: 8px; padding: 6px 10px; }
+.law-note.unchanged { border-left: 3px solid var(--ok); padding-left: 10px; }

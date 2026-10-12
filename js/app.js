@@ -306,8 +306,10 @@ async function examView(gen, q) {
           h('p', { class: 'muted', text: `${timeUp ? '時間到自動交卷' : '交卷'}，用時 ${L.formatClock(usedSec * 1000)}` }),
           h('div', { class: 'row' }, h('a', { class: 'btn primary', href: `#/exam?cert=${certId}&subject=${subjectId}`, text: '再考一次' }),
             h('a', { class: 'btn', href: '#/', text: '回首頁' }))),
+        examLawCard(qs, answers, L.lawSummary(questions)),
         missed.length ? h('section', { class: 'card' }, h('h3', { text: `答錯與未作答（${missed.length} 題）` }),
           h('ol', { class: 'wronglist' }, missed.map(x => h('li', {},
+            x.law && x.law.status === 'amended' ? h('p', { class: 'ng law-pre', text: `第 ${qs.indexOf(x) + 1} 題：依據的法規在考試後修正過，正解是依舊版（見上面「法規修正」）` }) : null,
             h('p', { text: x.stem }),
             h('p', { class: 'muted', text: `${answers.has(x.id) ? `你選 (${answers.get(x.id)})` : '未作答'}，正解 (${x.answer}) ${x.options[x.answer - 1]}` }),
             h('p', { class: 'src', text: L.sourceLabel(x) }),
@@ -530,11 +532,32 @@ function lawNote(item, sum) {
       b ? h('p', { text: `題庫裡點名「${b.name}」的 ${b.total} 題全部是這種情況（整批依舊版）。` }) : null,
       h('p', { class: 'muted', text: '有標示不代表答案錯了：程式只知道整部法規改過，不知道這題問的那一條有沒有改。正解是官方答案卷的答案。' }));
   }
+  // 四類在畫面上要分得出來（Dispatch 2026-10-12）：查過、沒修正的是查證過的結果；沒有版本資料的是「不知道」，不能看起來像查過
   const names = x.laws.map(e => `「${e.name}」`).join('、');
-  const text = x.status === 'unchanged' ? `題目點名的法規 ${names} 查得到的版本，在這期考試後沒有修正（${asof}；查詢日 ${x.checked}）。`
-    : x.status === 'partial' ? `題目點名的法規 ${names} 只查得到一部分的版本資料：查得到的沒有修正，查不到的不能保證。`
-    : `這題沒有法規版本資料（${x.laws.length ? `點名的 ${names} 查不到版本` : '題目沒有點名法規'}），不知道依據的規定在考試後有沒有改過。沒有標示不代表仍然有效。`;
-  return h('p', { class: 'src law-note', text });
+  const [tag, text] = x.status === 'unchanged' ? ['查過：考試後沒修正。', `題目點名的法規 ${names} 查得到的版本，在這期考試後沒有修正（${asof}；查詢日 ${x.checked}）。`]
+    : x.status === 'partial' ? ['只查到一部分。', `題目點名的法規 ${names} 只查得到一部分的版本資料：查得到的沒有修正，查不到的不能保證。`]
+    : ['沒查到：不知道有沒有改。', `這題沒有法規版本資料（${x.laws.length ? `點名的 ${names} 查不到版本` : '題目沒有點名法規'}）。沒有標示不代表仍然有效。`];
+  return h('p', { class: `src law-note ${x.status}` }, h('b', { class: `law-tag ${x.status}`, text: tag }), text);
+}
+
+// 模擬考成績頁：一次對完整份答案時最容易把正解記起來，所以修正過的題不管答對答錯都列出來（不只列在答錯清單）。
+// 四類分開寫：查過、沒修正的，跟沒有版本資料的，意義不同，不能合併。
+function examLawCard(qs, answers, sum) {
+  const withLaw = qs.filter(x => x.law);
+  if (!withLaw.length) return null;
+  const n = st => withLaw.filter(x => x.law.status === st).length;
+  const amd = qs.map((x, i) => [x, i + 1]).filter(([x]) => x.law && x.law.status === 'amended');
+  return h('section', { class: 'card law-summary exam-law' },
+    h('h3', { text: `法規修正：這份考卷有 ${amd.length} 題依據的法規在考試後修正過` }),
+    h('p', { text: `這份 ${qs.length} 題：考試後修正過 ${n('amended')} 題；查得到、考試後沒修正 ${n('unchanged')} 題；`
+      + `${n('partial') ? `只查得到一部分、沒看到修正 ${n('partial')} 題；` : ''}沒有版本資料 ${n('none')} 題。` }),
+    amd.length ? h('ul', { class: 'law-exam-list' }, amd.map(([x, no]) => {
+      const e = x.law.laws.filter(l => l.after.length);
+      const b = L.lawBatchOf(x, sum.batches);
+      return h('li', {}, h('b', { text: `第 ${no} 題` }), `（${answers.get(x.id) === x.answer ? '答對' : answers.has(x.id) ? '答錯' : '未作答'}）：`
+        + e.map(l => `「${l.name}」${l.after[l.after.length - 1]} 修正`).join('、') + (b ? '・整批依舊版' : ''));
+    })) : null,
+    h('p', { class: 'muted', text: '這些題的正解是依考試當時的舊版。有標示不代表答案錯了；沒有標示也不代表一定還有效（沒有版本資料的題，我們不知道有沒有改過）。' }));
 }
 
 // 正解換了的題（113 年版 → 116 年版）：寫明新舊正解各是什麼。照舊版背會「確信地答錯」，所以作答後與讀書頁都單獨標出來。
