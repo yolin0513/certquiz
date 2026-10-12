@@ -48,6 +48,9 @@ POS = re.compile(r"正確|適當|恰當|為真|妥當")
 GENERIC = re.compile(r"^(以上|上述|前述)|^(無法判斷|視情況而定|不一定|皆可|皆非|皆是|都是|都不是)$")
 COMBO_STRIP = re.compile(r"[僅只有皆均與及和、，,\s()（）]")
 COMBO = re.compile(r"^[A-Ea-e甲乙丙丁戊]+$")
+# 事後補充（2026-10-12，看到排行之後才發現；**不改計數、不改口徑**，只在畫面上標註）：
+# 事先定的通用選項規則沒抓到「A.、B.都正確」「只 A.正確」「(1)及(2)」這類組合型寫法，它們混進了實質選項的排行。
+POSTHOC_COMBO = re.compile(r"(都|皆|均)(不?正確|錯誤)$|^只?[A-Ea-e]\.?(正確|錯誤)$|^\(\d\)(及|、|與|和)\(\d\)")
 CLS_NAME = {"neg": "反向敘述題（問哪個是錯的）", "pos": "正向敘述題（問哪個是對的）", "other": "其他（問名詞、數字、對象、行為）"}
 PART = I.PART_NAME
 
@@ -294,7 +297,12 @@ def render(st, diff, old, new):
                   else f'<p class="warn-line">口徑敏感，排名不可信：主口徑前 {ROBUST_K} 名只有 {robust_val:.0%} 在穩健性口徑的前 {ROBUST_K} 名。</p>')
         return table(rows, cols) + rb
 
-    txt = ("說法", lambda r: esc(r["text"]), False)
+    def label(r):
+        t = esc(r["text"])
+        if POSTHOC_COMBO.search(n2(r["text"])):
+            t += '<span class="posthoc">（事後才發現是組合型選項：事先定的規則沒抓到，看的時候略過）</span>'
+        return t
+    txt = ("說法", label, False)
     c_cor = ("當正解", lambda r: r["correct"], True)
     c_dis = ("當誘答", lambda r: r["distract"], True)
     c_t = ("是對的", lambda r: r["true"], True)
@@ -314,7 +322,10 @@ def render(st, diff, old, new):
             sec.append('<h4>常常是「錯的」敘述</h4>' + ranked(L["false"], [txt, c_f, c_t], rb.get("false"), None))
         else:
             sec.append(f'<p class="warn-line">題型分類的驗尺沒有過（見最後一節），所以這裡不換算對錯，只列「當正解／當誘答」。注意：在問「哪個錯」的題目裡，正解是一句錯的敘述。</p>')
-        sec.append('<h4>常常就是答案的說法（當正解 ≥ 3 次）</h4>' + ranked(L["answer"], [txt, c_cor, c_dis], rb.get("answer"), None))
+        sec.append('<h4>常常就是答案的說法（當正解 ≥ 3 次）</h4>'
+                   + '<p class="warn-line">「當正解」是「被選為答案」，不是「這句話是對的」：題目如果問「何者錯誤」「何者不得」「何者為非」，'
+                   + '被選的那句反而是錯的、或是不能做的事。背的時候要連題目一起看，不要只背這句話。</p>'
+                   + ranked(L["answer"], [txt, c_cor, c_dis], rb.get("answer"), None))
         # 問題二
         sec.append('<h3>問題二：哪些說法最常被拿來騙人？</h3>')
         sec.append('<p class="lead">當誘答（錯誤選項）的次數。</p>' + ranked(L["trap"], [txt, c_dis, c_cor], rb.get("trap"), None))
@@ -381,19 +392,22 @@ def render(st, diff, old, new):
 <li>門檻：排行要該角色出現 ≥ {RANK_MIN} 次；交叉要當正解、當誘答各 ≥ {CROSS_MIN} 次；符合的少於 {LIST_MIN} 個就寫「數量不足」；比例的分母少於 {RATE_MIN} 寫「數量不足」。</li>
 <li>題型（問哪個對／問哪個錯／其他）是程式依題幹關鍵字分的。驗尺：每類隨機抽題，請另一個判斷者在看不到程式分類的情況下獨立判斷，整體一致 {rl['overall']:.0%}；{per}。{'達到門檻（整體 ≥ 90%、每類 ≥ 85%），所以呈現「對／錯」。' if truth_ok else '沒達到門檻，所以不呈現「對／錯」，只呈現當正解／當誘答。'}</li>
 <li>只看字面：同一個意思換個說法，不會被算成同一個。</li>
+<li><b>事後發現的漏洞</b>：事先定的「通用選項」規則沒抓到「A.、B.都正確」「只 A.正確」「(1)及(2)」這類組合型寫法，所以它們混進了上面的排行。照「揭曉後不改口徑」的規則，計數沒有改，只在排行裡標註，看的時候略過。</li>
+<li><b>為什麼不呈現對／錯</b>：題型分類只靠關鍵字，抓不到「下列何者為非」「不得有下列何種情事」這類寫法，也會把「不慎作出不正確之解釋，應如何正確處理？」誤判成問哪個錯。驗尺因此在「其他」那一類只有 {rl['per'].get('other', (0, 0))[0]:.0%}，低於事先定的 85%。</li>
 <li>這份方法在算之前就寫定並提交（專案文件 docs/L 第 9 節）。</li>
 </ul>"""
 
+    # 色票名稱跟 App 一致（--fg、--muted、--pri、--pri-fg、--ok、--ng），App 的對比檢查才能原樣套用
     css = """
-:root{--bg:#f7f8fa;--paper:#fff;--ink:#1b2430;--muted:#536071;--line:#d8dee6;--accent:#1f5a8a;--ok:#1d6b3a;--ok-bg:#e5f3ea;--ng:#a32a20;--ng-bg:#fbe7e5;--warn:#7a4b00;--warn-bg:#fbf0dc;
+:root{--pri-fg:#ffffff;--bg:#f7f8fa;--paper:#fff;--fg:#1b2430;--muted:#536071;--line:#d8dee6;--pri:#1f5a8a;--ok:#1d6b3a;--ok-bg:#e5f3ea;--ng:#a32a20;--ng-bg:#fbe7e5;--warn:#7a4b00;--warn-bg:#fbf0dc;
 --f:"Noto Sans TC","PingFang TC","Microsoft JhengHei",system-ui,sans-serif}
-@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#11161c;--paper:#1a2129;--ink:#e6eaef;--muted:#a1adbb;--line:#2e3844;--accent:#8fbbe3;--ok:#7fd29a;--ok-bg:#15301f;--ng:#f0a198;--ng-bg:#3a1f1c;--warn:#f0c779;--warn-bg:#33281a;color-scheme:dark}}
-:root[data-theme="dark"]{--bg:#11161c;--paper:#1a2129;--ink:#e6eaef;--muted:#a1adbb;--line:#2e3844;--accent:#8fbbe3;--ok:#7fd29a;--ok-bg:#15301f;--ng:#f0a198;--ng-bg:#3a1f1c;--warn:#f0c779;--warn-bg:#33281a;color-scheme:dark}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--pri-fg:#11161c;--bg:#11161c;--paper:#1a2129;--fg:#e6eaef;--muted:#a1adbb;--line:#2e3844;--pri:#8fbbe3;--ok:#7fd29a;--ok-bg:#15301f;--ng:#f0a198;--ng-bg:#3a1f1c;--warn:#f0c779;--warn-bg:#33281a;color-scheme:dark}}
+:root[data-theme="dark"]{--pri-fg:#11161c;--bg:#11161c;--paper:#1a2129;--fg:#e6eaef;--muted:#a1adbb;--line:#2e3844;--pri:#8fbbe3;--ok:#7fd29a;--ok-bg:#15301f;--ng:#f0a198;--ng-bg:#3a1f1c;--warn:#f0c779;--warn-bg:#33281a;color-scheme:dark}
 *{box-sizing:border-box}html{-webkit-text-size-adjust:100%}
-body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.7 var(--f)}
+body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.7 var(--f)}
 main{max-width:760px;margin:0 auto;padding-inline:16px;padding-block:20px 48px}
 h1{font-size:1.45rem;line-height:1.35;margin:0 0 6px;text-wrap:balance}
-h2{font-size:1.2rem;margin:0 0 10px;text-wrap:balance}h3{font-size:1.05rem;margin:22px 0 8px}h4{font-size:.98rem;margin:16px 0 6px;color:var(--accent)}
+h2{font-size:1.2rem;margin:0 0 10px;text-wrap:balance}h3{font-size:1.05rem;margin:22px 0 8px}h4{font-size:.98rem;margin:16px 0 6px;color:var(--pri)}
 p{margin:6px 0}.lead{color:var(--muted)}.muted{color:var(--muted);font-size:.9rem}
 section{background:var(--paper);border:1px solid var(--line);border-radius:12px;padding:16px;margin:0 0 16px;min-width:0}
 .tw{overflow-x:auto}table{width:100%;border-collapse:collapse;font-size:.92rem}th,td{text-align:left;padding:6px 6px;border-bottom:1px solid var(--line);vertical-align:top}
@@ -405,10 +419,11 @@ th{color:var(--muted);font-weight:600;white-space:nowrap}.num{text-align:right;f
 .opts li{margin:2px 0;padding:2px 6px;border-radius:6px}.opts li.right{background:var(--ok-bg);border:1px solid var(--ok)}
 .pair{border-top:2px solid var(--line);padding-top:10px;margin-top:14px}.tag{display:inline-block;font-size:.8rem;padding:1px 8px;border-radius:999px;margin:6px 0 0}
 .tag.new{background:var(--ok-bg);color:var(--ok)}.tag.old{background:var(--ng-bg);color:var(--ng)}
-details{margin:10px 0}summary{cursor:pointer;font-weight:600;color:var(--accent);padding:6px 0}
+details{margin:10px 0}summary{cursor:pointer;font-weight:600;color:var(--pri);padding:6px 0}
 .facts td:first-child{white-space:nowrap;color:var(--muted)}
-nav a{color:var(--accent)}nav{display:flex;flex-wrap:wrap;gap:6px 14px;font-size:.92rem}
-.keynote{border-left:4px solid var(--accent);padding-left:10px}
+nav a{color:var(--pri)}nav{display:flex;flex-wrap:wrap;gap:6px 14px;font-size:.92rem}
+.keynote{border-left:4px solid var(--pri);padding-left:10px}
+.posthoc{display:block;font-size:.82rem;color:var(--warn)}
 """
     facts = [("考試", "金融市場常識與職業道德（共同科目）"), ("題數／時間", "一百題，四選一單選，六十分鐘"), ("配分", "金融市場常識 50%、職業道德 50%"),
              ("及格", "七十分；成績保留五年"), ("報名費", "300 元（2027 年 1 月 1 日起；2026 年底前的場次是 250 元）"),

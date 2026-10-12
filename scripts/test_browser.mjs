@@ -15,6 +15,7 @@ import { mkdtempSync, cpSync, rmSync, existsSync, readFileSync, writeFileSync, r
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { AUDIT, AUDIT_RULER } from './audit_lib.mjs';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const PUP_DIR = process.env.PUPPETEER_FROM || join(ROOT, '..', 'JLPT_App');
@@ -812,70 +813,7 @@ async function importStudyTest(browser, base) {
 // 門檻：一般文字 4.5:1；大字（≥24px，或粗體 ≥18.66px）3:1。停用的控制項（aria-disabled／disabled）依 WCAG 1.4.3 豁免，但另外計數。
 // 連結、按鈕、輸入框的文字色必須是主題色之一（不能落回瀏覽器預設：連結 #0000ee、已點過 #551a8b，深色底上只有 1.5～1.7:1）。
 // getComputedStyle 看不到 :visited 的樣式，所以另外掃樣式表：不准有 :visited 規則（有的話上面的檢查就看不到）。
-const AUDIT = () => {
-  const parse = c => { const m = c.match(/rgba?\(([^)]+)\)/); if (!m) return null; const v = m[1].split(/[ ,/]+/).filter(Boolean).map(Number); return { r: v[0], g: v[1], b: v[2], a: v.length > 3 ? v[3] : 1 }; };
-  const lum = ({ r, g, b }) => { const f = x => { x /= 255; return x <= 0.04045 ? x / 12.92 : ((x + 0.055) / 1.055) ** 2.4; }; return 0.2126 * f(r) + 0.7152 * f(g) + 0.0722 * f(b); };
-  const ratio = (a, b) => { const x = lum(a), y = lum(b); return (Math.max(x, y) + 0.05) / (Math.min(x, y) + 0.05); };
-  const over = (top, under) => ({ r: top.r * top.a + under.r * (1 - top.a), g: top.g * top.a + under.g * (1 - top.a), b: top.b * top.a + under.b * (1 - top.a), a: 1 });
-  const bgOf = el => {
-    const layers = [];
-    for (let e = el; e; e = e.parentElement) { const c = parse(getComputedStyle(e).backgroundColor); if (c && c.a > 0) { layers.push(c); if (c.a >= 1) break; } }
-    let acc = { r: 255, g: 255, b: 255, a: 1 };   // 畫布預設白（body 有自己的背景，正常走不到這裡）
-    for (const c of layers.reverse()) acc = over(c, acc);
-    return acc;
-  };
-  const root = getComputedStyle(document.documentElement);
-  const probe = document.createElement('span'); document.body.appendChild(probe);
-  const tokens = ['--fg', '--muted', '--pri', '--pri-fg', '--ok', '--ng'].map(v => { probe.style.color = root.getPropertyValue(v).trim(); return getComputedStyle(probe).color; });
-  probe.remove();
-  for (const d of document.querySelectorAll('details')) d.open = true;
-  const out = { n: 0, exempt: 0, fails: [], minRatio: 99, minAt: '', untoken: [], visitedRules: [], pop: {}, population: 0, missed: [] };
-  const measured = new Set();
-  const tag = el => el.tagName.toLowerCase() + (el.className && typeof el.className === 'string' ? '.' + el.className.trim().split(/\s+/).join('.') : '');
-  for (const el of document.querySelectorAll('#view *')) {
-    if (!el.getClientRects().length) continue;
-    const cs = getComputedStyle(el);
-    if (cs.visibility !== 'visible') continue;
-    if (/^(A|BUTTON|SELECT|INPUT|SUMMARY)$/.test(el.tagName)) {
-      out.pop[tag(el)] = (out.pop[tag(el)] || 0) + 1;
-      if (!tokens.includes(cs.color)) out.untoken.push(`${tag(el)}「${el.textContent.trim().slice(0, 12)}」${cs.color}`);
-    }
-    const own = [...el.childNodes].some(n => n.nodeType === 3 && n.data.trim()) || el.tagName === 'SELECT';
-    if (!own) continue;
-    let op = 1; for (let e = el; e; e = e.parentElement) op *= Number(getComputedStyle(e).opacity);
-    if (el.closest('[aria-disabled="true"], :disabled')) { out.exempt++; measured.add(el); continue; }
-    out.n++;
-    measured.add(el);
-    const fg = parse(cs.color), bg = bgOf(el);
-    const size = parseFloat(cs.fontSize), bold = Number(cs.fontWeight) >= 700;
-    const need = size >= 24 || (bold && size >= 18.66) ? 3 : 4.5;
-    const r = op < 1 ? 0 : ratio(fg.a < 1 ? over(fg, bg) : fg, bg);
-    if (r < out.minRatio) { out.minRatio = r; out.minAt = `${tag(el)}「${el.textContent.trim().slice(0, 12)}」`; }
-    if (r < need) out.fails.push(`${tag(el)}「${el.textContent.trim().slice(0, 14)}」${op < 1 ? '半透明' : r.toFixed(2) + ':1 < ' + need}`);
-  }
-  // 母體：跟上面的選法無關，另外從整個 body 走每個文字節點，畫面上看得到的就算一個「文字元素」（加上 select）。
-  // 量到的（算了對比的＋豁免的）必須剛好等於母體；選擇器少抓到一塊區域時，這裡會點名漏掉的元素。
-  const popSet = new Set();
-  const tw = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
-  for (let t = tw.nextNode(); t; t = tw.nextNode()) {
-    const p = t.parentElement;
-    if (!t.data.trim() || !p || /^(SCRIPT|STYLE|NOSCRIPT|OPTION)$/.test(p.tagName)) continue;
-    if (!p.getClientRects().length || getComputedStyle(p).visibility !== 'visible') continue;
-    popSet.add(p);
-  }
-  for (const sel of document.querySelectorAll('select')) if (sel.getClientRects().length) popSet.add(sel);
-  out.population = popSet.size;
-  for (const e of popSet) if (!measured.has(e)) out.missed.push(`${tag(e)}「${e.textContent.trim().slice(0, 12)}」`);
-  for (const e of measured) if (!popSet.has(e)) out.missed.push(`（量到但不在母體）${tag(e)}`);
-  for (const sh of document.styleSheets) for (const rule of sh.cssRules || []) if ((rule.selectorText || '').includes(':visited')) out.visitedRules.push(rule.selectorText);
-  return out;
-};
-// 驗尺：同一套公式對已知值——#767676／白 4.54（剛好過）、#777777／白 4.48（剛好不過）、黑／白 21
-const AUDIT_RULER = () => {
-  const lum = h => { const f = x => { x /= 255; return x <= 0.04045 ? x / 12.92 : ((x + 0.055) / 1.055) ** 2.4; }; const v = [1, 3, 5].map(i => parseInt(h.slice(i, i + 2), 16)); return 0.2126 * f(v[0]) + 0.7152 * f(v[1]) + 0.0722 * f(v[2]); };
-  const r = (a, b) => { const x = lum(a), y = lum(b); return (Math.max(x, y) + 0.05) / (Math.min(x, y) + 0.05); };
-  return [r('#767676', '#ffffff'), r('#777777', '#ffffff'), r('#000000', '#ffffff')];
-};
+// AUDIT／AUDIT_RULER 搬到 scripts/audit_lib.mjs（本機 HTML 檢查也用同一套）
 
 // 按鈕格線的通用規則（2026-10-12）：不管幾張卡片、幾個按鈕——除了最後一排，每排兩個；最後一排如果只有一個，必須置中（不靠左）；全部等寬。
 // 量真的卡片，也在頁面上造按鈕數 1～7 的卡片逐一量（量完移除），證明規則不只對現在的卡片成立。
