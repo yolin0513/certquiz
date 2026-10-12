@@ -264,6 +264,13 @@ if (existsSync(real)) {
   check('出處：116 年版新增', lab('ethics-116-gen-002') === '證基會公告題庫 116 年版・第 1 題・116 年版新增', lab('ethics-116-gen-002'));
   check('出處：範圍外（已刪除）寫明不在 116 年考試範圍', lab('ethics-113-gen-009') === '證基會公告題庫 113 年版・第 1 題・不在 116 年考試範圍內（116 年版已刪除這題）', lab('ethics-113-gen-009'));
   check('出處：範圍外（改過）寫明不在 116 年考試範圍', lab('ethics-113-eth-007') === '證基會公告題庫 113 年版・第 1 題・不在 116 年考試範圍內（116 年版已改過這題）', lab('ethics-113-eth-007'));
+  // 正解換了的題：兩邊的出處都要寫明
+  const chg = [mk('ethics-116-eth-214', 'eth', { change: 'modified', answer: 4, prevAnswer: { version: '113', qno: 214, answer: 1, text: '舊正解' } }),
+    mk('ethics-113-eth-214', 'eth', { version: '113', scope: 'outside', change: 'modified', newId: 'ethics-116-eth-214', answerChanged: true })];
+  check('分版題庫：正解換了的題，格式合法 → 通過', L.validateImportPack({ ...base, questions: chg }, ['ethics']).ok);
+  check('分版題庫：prevAnswer 缺舊正解文字 → 擋', !L.validateImportPack({ ...base, questions: [{ ...chg[0], prevAnswer: { answer: 1 } }, chg[1]] }, ['ethics']).ok);
+  check('出處：116 年版改過而且正解換了', L.sourceLabel(chg[0]) === '證基會公告題庫 116 年版・第 1 題・116 年版改過（正解跟 113 年版不同）', L.sourceLabel(chg[0]));
+  check('出處：113 年版範圍外而且正解換了', L.sourceLabel(chg[1]) === '證基會公告題庫 113 年版・第 1 題・不在 116 年考試範圍內（116 年版已改過這題，而且正解換了）', L.sourceLabel(chg[1]));
   const realEthics = join(dirname(fileURLToPath(import.meta.url)), '..', 'data', 'local', 'import', 'ethics-匯入包.json');
   if (existsSync(realEthics)) {
     const r = L.validateImportPack(JSON.parse(readFileSync(realEthics, 'utf-8')), ['bic', 'az900', 'ethics']);
@@ -273,6 +280,10 @@ if (existsSync(real)) {
     check(`真的金融常識與道德匯入包：通過檢查；考試範圍內 ${inS.length} 題全是 116 年版、範圍外 ${out.length} 題全是 113 年版；模擬考 100 題＝常識 50＋道德 50、全在範圍內`,
       r.ok && inS.length === 1174 && inS.every(x => x.version === '116') && out.length === 128 && out.every(x => x.version === '113')
       && e.ok && e.questions.filter(x => x.subject === 'gen').length === 50 && e.questions.every(x => L.inScope(x) && x.version === '116'), r.errors.slice(0, 3).join('；'));
+    const pc = r.questions.filter(x => x.prevAnswer);
+    check(`真的金融常識與道德匯入包：正解換了的題 ${pc.length} 題（應為 1 題：職業道德 116 年版第 214 題，113 年版正解 (1)、116 年版 (4)）`,
+      pc.length === 1 && pc[0].id === 'ethics-116-eth-214' && pc[0].prevAnswer.answer === 1 && pc[0].answer === 4
+      && r.questions.filter(x => x.answerChanged).map(x => x.id).join() === 'ethics-113-eth-214', JSON.stringify(pc.map(x => [x.id, x.prevAnswer])));
   }
 }
 

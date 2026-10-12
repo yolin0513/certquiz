@@ -171,7 +171,8 @@ async function practiceView(gen, q) {
       fill(feedback, h('p', { class: correct ? 'ok' : 'ng', text: correct ? '答對了' : `答錯了，正解是 (${item.answer})` }),
         h('p', { class: 'src', text: L.sourceLabel(item) }),
         item.explain ? h('p', { class: 'explain', text: item.explain }) : null,
-        item.basis ? h('p', { class: 'src basis', text: L.basisText(item) }) : null);
+        item.basis ? h('p', { class: 'src basis', text: L.basisText(item) }) : null,
+        answerChangeNote(item, questions));
       feedback.hidden = false;
       next.hidden = false;
       results.push({ item, k, correct });
@@ -184,7 +185,7 @@ async function practiceView(gen, q) {
       h('div', { class: 'bar' }, h('a', { class: 'back', href: '#/', text: '← 結束' }), h('span', { text: `${i + 1} / ${picked.length}` })),
       h('section', { class: 'card q' },
         item.source && item.source.startsWith('original') ? h('p', { class: 'src', text: L.sourceLabel(item) }) : null,
-        item.scope === 'outside' ? h('p', { class: 'ng scope-out', text: `不在 116 年考試範圍內：${item.change === 'deleted' ? '116 年版已刪除這題' : '116 年版已改過這題'}。練這題可能學到過時的內容。` }) : null,
+        item.scope === 'outside' ? h('p', { class: 'ng scope-out', text: `不在 116 年考試範圍內：${item.change === 'deleted' ? '116 年版已刪除這題' : item.answerChanged ? '116 年版已改過這題，而且正解換了（作答後會列出新舊正解）' : '116 年版已改過這題'}。練這題可能學到過時的內容。` }) : null,
         h('p', { class: 'stem', text: item.stem }), h('div', { class: 'opts' }, opts), feedback, next));
   };
 
@@ -483,6 +484,18 @@ async function importStudyView(gen, q, cert, questions) {
       h('p', { class: 'src', text: L.sourceLabel(x) }))));
 }
 
+// 正解換了的題（113 年版 → 116 年版）：寫明新舊正解各是什麼。照舊版背會「確信地答錯」，所以作答後與讀書頁都單獨標出來。
+function answerChangeNote(item, questions) {
+  if (item.prevAnswer) {
+    return h('p', { class: 'ng answer-changed', text: `注意：這題的正解改過。113 年版的正解是 (${item.prevAnswer.answer})「${item.prevAnswer.text}」；116 年版改成 (${item.answer})「${item.options[item.answer - 1]}」。照 113 年版背會答錯。` });
+  }
+  if (item.answerChanged && item.newId) {
+    const nw = questions.find(x => x.id === item.newId);
+    if (nw) return h('p', { class: 'ng answer-changed', text: `注意：這是 113 年版，正解是 (${item.answer})「${item.options[item.answer - 1]}」；116 年版改成 (${nw.answer})「${nw.options[nw.answer - 1]}」。考試以 116 年版為準。` });
+  }
+  return null;
+}
+
 // 分版題庫（金融市場常識與職業道德）的讀書頁：116 年版依科目逐題列；113 年版裡不在考試範圍的題另外一頁，標明為什麼不在範圍。
 // 只列題目與官方正解，不寫自己的解析（docs/L）。
 async function versionedStudyView(gen, q, cert, questions) {
@@ -493,6 +506,7 @@ async function versionedStudyView(gen, q, cert, questions) {
   const byId = new Map(questions.map(x => [x.id, x]));
   const inScope = id => active.filter(x => L.inScope(x) && x.subject === id);
   const outside = active.filter(x => !L.inScope(x));
+  const subjNameAll = new Map(cert.subjects.map(s => [s.id, s.name]));
   const tab = (v, text) => h('a', { class: view === v ? 'btn primary' : 'btn', href: `#/study?cert=${cert.id}&view=${v}`, text });
   const opts = x => h('ol', { class: 'study-opts' }, x.options.map((t, k) => h('li', { class: k + 1 === x.answer ? 'right' : null },
     h('span', { text: t }), k + 1 === x.answer ? h('b', { text: '（正解）' }) : null)));
@@ -503,6 +517,15 @@ async function versionedStudyView(gen, q, cert, questions) {
   const subjName = new Map(cert.subjects.map(s => [s.id, s.name]));
   const pager = pages > 1 ? h('div', { class: 'row' }, Array.from({ length: pages }, (_, k) => h('a', {
     class: k + 1 === page ? 'btn primary' : 'btn', href: `#/study?cert=${cert.id}&view=${view}&page=${k + 1}`, text: `${k * PAGE + 1}～${Math.min((k + 1) * PAGE, list.length)}` }))) : null;
+  const changed = active.filter(x => x.prevAnswer);
+  const changedCard = view === 'outside' && changed.length ? h('section', { class: 'card warn', id: 'answer-changed' },
+    h('h3', { text: `正解換了的題（${changed.length} 題）` }),
+    h('p', { text: '這些題 116 年版改過，而且正解換成另一個選項。照 113 年版背的話，會把錯的那個選項記成對的。' }),
+    changed.map(x => h('div', { class: 'variant' },
+      h('p', { class: 'muted', text: `${subjNameAll.get(x.subject)}・116 年版第 ${x.qno} 題（113 年版第 ${x.prevAnswer.qno} 題）` }),
+      h('p', { class: 'stem', text: x.stem }),
+      h('p', { text: `113 年版的正解：(${x.prevAnswer.answer})「${x.prevAnswer.text}」` }),
+      h('p', { class: 'ok', text: `116 年版的正解：(${x.answer})「${x.options[x.answer - 1]}」（考試以這個為準）` })))) : null;
   const head = view === 'outside'
     ? h('section', { class: 'card warn', id: 'scope-note' }, h('h3', { text: `不在 116 年考試範圍內（113 年版，${outside.length} 題）` }),
       h('p', { text: '這些是 113 年版題庫裡、116 年版已經刪除或改過的題。116 年版從 2027 年 1 月 1 日起適用，這些題不會出現在你的考試裡。' }),
@@ -512,7 +535,7 @@ async function versionedStudyView(gen, q, cert, questions) {
       h('div', { class: 'row' }, h('a', { class: 'btn primary', href: `#/practice?cert=${cert.id}&mode=practice&subject=${view}&count=50&order=unseen`, text: '練這一科（50 題）' })));
   render(gen, h('a', { class: 'back', href: '#/', text: '← 回首頁' }),
     h('div', { class: 'row' }, cert.subjects.map(s => tab(s.id, `116 年版・${s.name}（${inScope(s.id).length}）`)), tab('outside', `不在考試範圍（${outside.length}）`)),
-    head, pager,
+    changedCard, head, pager,
     shown.map(x => {
       const nw = x.newId ? byId.get(x.newId) : null;
       return h('section', { class: 'card study-q' },

@@ -41,6 +41,9 @@ export function validateImportPack(obj, knownCerts) {
     if (q.change !== undefined && !CHANGES.has(q.change)) errors.push(`${tag}：差異類別不認得（${q.change}）`);
     if (q.scope === 'outside' && !['modified', 'deleted'].includes(q.change)) errors.push(`${tag}：不在考試範圍的題要寫明是改過或刪除`);
     if (q.newId !== undefined && typeof q.newId !== 'string') errors.push(`${tag}：newId 格式不對`);
+    if (q.answerChanged !== undefined && q.answerChanged !== true) errors.push(`${tag}：answerChanged 只能是 true 或不寫`);
+    if (q.prevAnswer !== undefined && !(q.prevAnswer && [1, 2, 3, 4].includes(q.prevAnswer.answer) && typeof q.prevAnswer.text === 'string' && q.prevAnswer.text))
+      errors.push(`${tag}：prevAnswer 格式不對（要有舊版正解 1～4 與文字）`);
   });
   // dupOf 必須指到包內存在、而且本身不是重複的題；newId（舊版改過的題指到新版那題）也必須在包內、而且在考試範圍內
   const byId = new Map(qs.map(q => [q && q.id, q]));
@@ -230,8 +233,8 @@ export function sourceLabel(q) {
   if (q.source === 'tabf-official') return `官方歷屆試題${tail}`;
   if (q.source === 'sfi-official') {
     const head = `證基會公告題庫${q.version ? ` ${q.version} 年版` : ''}${q.qno ? `・第 ${q.qno} 題` : ''}`;
-    if (q.scope === 'outside') return `${head}・不在 116 年考試範圍內（${q.change === 'deleted' ? '116 年版已刪除這題' : '116 年版已改過這題'}）`;
-    return `${head}${q.change === 'added' ? '・116 年版新增' : q.change === 'modified' ? '・116 年版改過' : ''}`;
+    if (q.scope === 'outside') return `${head}・不在 116 年考試範圍內（${q.change === 'deleted' ? '116 年版已刪除這題' : q.answerChanged ? '116 年版已改過這題，而且正解換了' : '116 年版已改過這題'}）`;
+    return `${head}${q.change === 'added' ? '・116 年版新增' : q.change === 'modified' ? (q.prevAnswer ? '・116 年版改過（正解跟 113 年版不同）' : '・116 年版改過') : ''}`;
   }
   if (q.source === 'user-import') return `使用者提供的官方歷屆試題${tail}`;
   if (q.source && q.source.startsWith('original')) {

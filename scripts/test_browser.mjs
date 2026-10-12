@@ -877,10 +877,47 @@ const AUDIT_RULER = () => {
   return [r('#767676', '#ffffff'), r('#777777', '#ffffff'), r('#000000', '#ffffff')];
 };
 
+// 按鈕格線的通用規則（2026-10-12）：不管幾張卡片、幾個按鈕——除了最後一排，每排兩個；最後一排如果只有一個，必須置中（不靠左）；全部等寬。
+// 量真的卡片，也在頁面上造按鈕數 1～7 的卡片逐一量（量完移除），證明規則不只對現在的卡片成立。
+async function gridRule(page) {
+  return page.evaluate(() => {
+    const check = (actions, tag) => {
+      const box = actions.getBoundingClientRect();
+      const bs = [...actions.querySelectorAll(':scope > .btn')].map(b => b.getBoundingClientRect());
+      const rows = new Map();
+      for (const b of bs) { const k = Math.round(b.top); rows.set(k, [...(rows.get(k) || []), b]); }
+      const rs = [...rows.values()];
+      const bad = [];
+      const w = bs.map(b => Math.round(b.width));
+      if (Math.max(...w) - Math.min(...w) > 1) bad.push(`${tag}：寬度不一（${Math.min(...w)}～${Math.max(...w)}）`);
+      rs.slice(0, -1).forEach((r, i) => { if (r.length !== 2) bad.push(`${tag}：第 ${i + 1} 排有 ${r.length} 個`); });
+      const last = rs[rs.length - 1] || [];
+      if (last.length === 1) {
+        const off = Math.abs((last[0].left + last[0].right) / 2 - (box.left + box.right) / 2);
+        if (off > 1.5) bad.push(`${tag}：最後一排落單、沒有置中（偏 ${Math.round(off)}px）`);
+      } else if (last.length !== 2) bad.push(`${tag}：最後一排有 ${last.length} 個`);
+      return bad;
+    };
+    const bad = [];
+    const real = [...document.querySelectorAll('#view .card .actions')];
+    real.forEach((a, i) => bad.push(...check(a, `真的第 ${i + 1} 張卡片（${a.querySelectorAll(':scope > .btn').length} 個按鈕）`)));
+    for (let n = 1; n <= 7; n++) {
+      const card = document.createElement('section'); card.className = 'card';
+      const a = document.createElement('div'); a.className = 'actions';
+      for (let k = 0; k < n; k++) { const b = document.createElement('a'); b.className = 'btn'; b.textContent = `按鈕${k + 1}`; a.append(b); }
+      card.append(a); document.getElementById('view').append(card);
+      bad.push(...check(a, `造出來的卡片（${n} 個按鈕）`));
+      card.remove();
+    }
+    return { real: real.map(a => a.querySelectorAll(':scope > .btn').length), bad };
+  });
+}
+
 async function homeGrid(page) {
   return page.$$eval('#view .card', cards => cards.filter(c => c.querySelector('.actions')).map(c => {
     const bs = [...c.querySelectorAll('.actions .btn')].map(b => b.getBoundingClientRect());
-    return { n: bs.length, w: bs.map(b => Math.round(b.width)), h: bs.map(b => Math.round(b.height)), x: [...new Set(bs.map(b => Math.round(b.left)))].sort((a, b) => a - b) };
+    const cols = bs.length % 2 ? bs.slice(0, -1) : bs;   // 落單置中的最後一個不算欄位置（置中與否由 gridRule 檢查）
+    return { n: bs.length, w: bs.map(b => Math.round(b.width)), h: bs.map(b => Math.round(b.height)), x: [...new Set(cols.map(b => Math.round(b.left)))].sort((a, b) => a - b) };
   }));
 }
 
@@ -977,6 +1014,9 @@ async function lookTest(browser, base, shotDir) {
         ok, JSON.stringify(g));
       const wide = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
       check(`首頁 ${w}px：沒有橫向捲動`, wide <= 1, `超出 ${wide}px`);
+      const gr = await gridRule(page);
+      check(`首頁 ${w}px：按鈕格線規則——真的 ${gr.real.length} 張卡片（按鈕數 ${gr.real.join('、')}）與造出來的 1～7 個按鈕：每排兩個，最後一排落單時置中、全部等寬`,
+        gr.bad.length === 0 && gr.real.length >= 2, gr.bad.slice(0, 5).join('；'));
     }
     const order = await page.$$eval('#view .card .actions', as => as.map(a => [...a.querySelectorAll('.btn')].map(b => b.textContent.replace(/ \d+$/, ''))));
     check(`首頁：${order.length} 張卡片前四個按鈕順序相同（${order[0] ? order[0].slice(0, 4).join('、') : ''}）`,
@@ -1112,6 +1152,17 @@ async function ethicsTest(browser, base) {
     check(`讀書頁（範圍外）：有警示卡；這一頁 ${outCards.length} 張卡全部標「不在 116 年考試範圍內」，改過的題附 116 年版的寫法（${outCards.filter(c => c.nw).length} 張）`,
       outCards.length === 50 && outCards.every(c => c.src.includes('不在 116 年考試範圍內')) && outCards.some(c => c.nw)
       && outCards.filter(c => c.nw).every(c => c.src.includes('已改過')), JSON.stringify(outCards.slice(0, 2)));
+    // 正解換了的題：範圍外那頁最上方單獨列出新舊正解；116 年版那題的卡片也標出來
+    const pc = pack.questions.filter(x => x.prevAnswer);
+    const card = await page.$eval('#answer-changed', e => e.innerText).catch(() => '');
+    const okCard = pc.length >= 1 && pc.every(x => card.includes(`113 年版的正解：(${x.prevAnswer.answer})「${x.prevAnswer.text}」`)
+      && card.includes(`116 年版的正解：(${x.answer})「${x.options[x.answer - 1]}」`));
+    check(`讀書頁（範圍外）：最上方「正解換了的題（${pc.length} 題）」單獨列出，新舊正解文字與匯入包一致`, okCard && card.includes(`正解換了的題（${pc.length} 題）`), card.slice(0, 200));
+    const x214 = pc[0];
+    await gotoView(page, base + `#/study?cert=ethics&view=${x214.subject}&page=${Math.ceil(x214.qno / 50)}`);
+    await page.waitForSelector('.study-q');
+    const lab = await page.$$eval('.study-q', (cs, stem) => (cs.find(c => c.querySelector('.stem').textContent === stem) || { querySelector: () => ({ textContent: '' }) }).querySelector('.src').textContent, x214.stem);
+    check(`讀書頁（116 年版）：正解換了的那題，卡片標「正解跟 113 年版不同」`, lab.includes('正解跟 113 年版不同'), lab);
     check('金融常識與道德：沒有頁面錯誤', errors.length === 0, errors.join('；'));
   } finally {
     await ctx.close();

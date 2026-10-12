@@ -57,6 +57,11 @@ def main():
                 r["change"] = "added"
             elif no in mod_new:
                 r["change"] = "modified"
+                m = mod_new[no]
+                if m["answer113"] != m["answer116"]:
+                    # 正解換了（Dispatch 2026-10-12：整批差異裡唯一會讓他「確信地答錯」的，要單獨標出新舊正解）
+                    oq = old[m["no113"]]
+                    r["prevAnswer"] = {"version": "113", "qno": oq["no"], "answer": oq["answer"], "text": oq["options"][oq["answer"] - 1]}
             qs.append(r)
             n_in += 1
         n_dup = n_out_mod = n_out_del = 0
@@ -67,6 +72,8 @@ def main():
                 n_dup += 1
             elif no in mod_old:
                 r.update(scope="outside", change="modified", newId=nid(new[mod_old[no]["no116"]]))
+                if mod_old[no]["answer113"] != mod_old[no]["answer116"]:
+                    r["answerChanged"] = True
                 n_out_mod += 1
             elif no in deleted:
                 r.update(scope="outside", change="deleted")
@@ -86,10 +93,14 @@ def main():
         return 1
     in_scope = [q for q in qs if q.get("scope") != "outside" and not q.get("dupOf")]
     outside = [q for q in qs if q.get("scope") == "outside"]
+    changed = [q for q in qs if q.get("prevAnswer")]
+    names = "、".join(I.PART_NAME[q["subject"]] + "第 " + str(q["qno"]) + " 題" for q in changed)
+    print(f"  正解換了的題：{len(changed)} 題（{names}）")
     pack = {"format": "certquiz-import", "version": 1, "cert": "ethics",
             "note": "證基會公告題庫（113 年版與 116 年版）。116 年版是考試範圍（2027-01-01 起適用）；113 年版裡已刪除或改過的題標 scope: outside。只放本機。",
             "sources": {k: {"file": v["file"], "sha256": v["sha256"], "official": v["official"]} for k, v in banks.items()},
-            "counts": {"total": len(qs), "inScope": len(in_scope), "outside": len(outside), "dup": sum(1 for q in qs if q.get("dupOf"))},
+            "counts": {"total": len(qs), "inScope": len(in_scope), "outside": len(outside), "dup": sum(1 for q in qs if q.get("dupOf")),
+                       "answerChanged": len(changed)},
             "questions": qs}
     OUT.parent.mkdir(parents=True, exist_ok=True)
     OUT.write_text(json.dumps(pack, ensure_ascii=False, indent=1), encoding="utf-8")
