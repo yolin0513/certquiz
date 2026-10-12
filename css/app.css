@@ -101,3 +101,6 @@ details summary { cursor: pointer; margin: 6px 0; }
 .law-note.unchanged { border-left: 3px solid var(--ok); padding-left: 10px; }
 .law-orig { margin: 4px 0; }
 .law-orig blockquote { margin: 4px 0; padding: 6px 10px; border-left: 3px solid var(--muted); white-space: pre-wrap; }
+/* 「答案有疑問」標記：標了之後要看得出來（不只換字） */
+.btn.doubt { margin-top: 8px; font-size: .9rem; min-height: 40px; }
+.btn.doubt.on { border: 2px solid var(--ng); color: var(--ng); }

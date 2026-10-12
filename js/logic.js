@@ -432,7 +432,7 @@ export async function requestPersistence(storage) {
 // 不含題目（題目另外用匯入包匯入；備份檔裡只有題號，沒有任何題目文字）。
 export const BACKUP_FORMAT = 'certquiz-backup';
 export const BACKUP_VERSION = 1;
-export const BACKUP_META_KEYS = ['studied', 'examHistory'];
+export const BACKUP_META_KEYS = ['studied', 'examHistory', 'doubts'];
 const BACKUP_STORES = ['attempts', 'progress', 'mistakes'];
 
 /** 從各 store 的內容組成備份物件；counts 讓還原時核對檔案沒有被截斷。 */
@@ -494,6 +494,30 @@ export function validateBackup(obj) {
     for (const k of Object.keys(meta)) if (!BACKUP_META_KEYS.includes(k)) errors.push(`meta 有不認得的項目：${k}`);
     if (meta.studied !== undefined && (typeof meta.studied !== 'object' || Array.isArray(meta.studied))) errors.push('讀書紀錄格式不對');
     if (meta.examHistory !== undefined && !Array.isArray(meta.examHistory)) errors.push('模擬考紀錄格式不對');
+    if (meta.doubts !== undefined && !validDoubts(meta.doubts)) errors.push('「答案有疑問」標記格式不對');
   }
   return errors.length ? { ok: false, errors } : { ok: true, errors, data: { attempts: obj.attempts, progress: obj.progress, mistakes: obj.mistakes, meta } };
+}
+
+// ---------------------------------------------------------------- 「答案有疑問」標記（U6，2026-10-12）
+// 使用者覺得官方答案怪的題，標起來之後一起看。App 不改答案、不寫自己的解析；標記只是一份清單。
+// 存在 meta 'doubts'：{ 題號: { cert, ts, note? } }，跟著備份走。
+function validDoubts(d) {
+  return !!d && typeof d === 'object' && !Array.isArray(d)
+    && Object.entries(d).every(([k, v]) => isStr(k) && v && isStr(v.cert) && isNum(v.ts) && (v.note === undefined || typeof v.note === 'string'));
+}
+
+/** 標或取消標記（回傳新的物件，不改原本的）。 */
+export function toggleDoubt(doubts, q, now) {
+  const out = { ...(doubts || {}) };
+  if (out[q.id]) delete out[q.id];
+  else out[q.id] = { cert: q.cert, ts: now };
+  return out;
+}
+
+/** 某張證照被標記的題，新標的排前面；題目已不在題庫（例如重新匯入後被換掉）的另外列出題號。 */
+export function doubtList(doubts, questions, cert) {
+  const byId = new Map(questions.map(q => [q.id, q]));
+  const mine = Object.entries(doubts || {}).filter(([, v]) => v.cert === cert).sort((a, b) => b[1].ts - a[1].ts);
+  return { items: mine.filter(([k]) => byId.has(k)).map(([k, v]) => ({ q: byId.get(k), ...v })), missing: mine.filter(([k]) => !byId.has(k)).map(([k]) => k) };
 }

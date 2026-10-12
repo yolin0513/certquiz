@@ -1149,6 +1149,44 @@ async function weakTest(browser, base) {
   }
 }
 
+// ---------------------------------------------------------------- 二之九之三、「答案有疑問」標記（U6）
+async function doubtTest(browser, base) {
+  console.log('== 二之九之三、答案有疑問：作答後標記 → 統計頁看得到 → 清單列出題目與官方正解 → 取消');
+  const pack = JSON.parse(readFileSync(PACK, 'utf-8'));
+  const ctx = await browser.createBrowserContext();
+  const errors = [];
+  try {
+    const page = await newPage(ctx, errors);
+    await gotoView(page, base);
+    await waitText(page, '證照題庫練習');
+    await importPack(page, PACK, pack.counts.active);
+    await gotoView(page, base + '#/practice?cert=bic&mode=practice&count=1&order=random');
+    await page.waitForSelector('.opt:not([disabled])');
+    const stem = await page.$eval('.stem', e => e.textContent);
+    await page.click('.opt[data-k="1"]');
+    await (await page.waitForSelector('.feedback .btn.doubt')).click();
+    const on = await page.waitForSelector('.feedback .btn.doubt[aria-pressed="true"]').then(e => e.evaluate(x => x.textContent)).catch(() => '');
+    check('標記：作答後按「標記：答案有疑問」→ 按鈕變成「已標記」（文字和外框都變）', on.includes('已標記') && await page.$eval('.feedback .btn.doubt', e => e.classList.contains('on')));
+    await gotoView(page, base + '#/stats?cert=bic');
+    const link = await page.waitForSelector('#doubts-link').then(e => e.evaluate(x => x.innerText)).catch(() => '');
+    check('標記：統計頁寫「你標了 1 題」並有連結', link.includes('你標了 1 題') && link.includes('看這 1 題'), link);
+    await gotoView(page, base + '#/doubts?cert=bic');
+    await page.waitForSelector('.doubt-item');
+    const items = await page.$$eval('.doubt-item', cs => cs.map(c => ({ stem: c.querySelector('.stem').textContent, right: c.querySelector('li.right')?.textContent || '', law: !!c.querySelector('.law-note') })));
+    const it = pack.questions.find(x => !x.dupOf && x.stem === stem);
+    check('標記清單：列出那一題、標出官方正解、附法規說明；寫明 App 不改答案',
+      items.length === 1 && items[0].stem === stem && !!it && items[0].right.startsWith(it.options[it.answer - 1]) && items[0].law
+      && (await text(page)).includes('App 不改答案'), JSON.stringify(items).slice(0, 200));
+    await page.click('.doubt-item .btn.doubt');
+    await page.waitForSelector('.doubt-item .btn.doubt[aria-pressed="false"]');
+    await gotoView(page, base + '#/stats?cert=bic');
+    const after = await page.waitForSelector('#doubts-link').then(e => e.evaluate(x => x.innerText)).catch(() => '');
+    check('標記：在清單裡再按一次取消 → 統計頁回到「還沒有標記」', after.includes('還沒有標記') && errors.length === 0, after + errors.join('；'));
+  } finally {
+    await ctx.close();
+  }
+}
+
 // ---------------------------------------------------------------- 二之九之二、備份與還原（U4）
 // 來回一趟：A 裝置練題、讀書 → 匯出備份檔 → 全新的 B 裝置（另一個瀏覽器設定檔）匯入題目、先練一題 → 還原 → B 的紀錄＝A 的紀錄。
 // iPhone 走分享面板（navigator.share），桌機走下載；兩條路都跑。
@@ -1161,7 +1199,7 @@ async function dumpRecords(page) {
       Promise.all(['attempts', 'progress', 'mistakes', 'meta'].map(all)).then(([a, p, m, meta]) => {
         const sort = (xs, k) => [...xs].sort((x, y) => String(x[k]).localeCompare(String(y[k])));
         resolve({ attempts: a, progress: sort(p, 'qid'), mistakes: sort(m, 'qid'),
-          meta: Object.fromEntries(meta.filter(x => ['studied', 'examHistory'].includes(x.k)).map(x => [x.k, x.v])) });
+          meta: Object.fromEntries(meta.filter(x => ['studied', 'examHistory', 'doubts'].includes(x.k)).map(x => [x.k, x.v])) });
       });
     };
     req.onerror = () => reject(req.error);
@@ -1188,7 +1226,9 @@ async function backupTest(browser, base) {
     await importPack(a, PACK, pack.counts.active);
     await practiceRound(a, 10);
     await gotoView(a, base + '#/study?cert=bic');
-    await a.waitForSelector('.study-q');
+    await a.waitForSelector('.study-q .btn.doubt');
+    await a.click('.study-q .btn.doubt');   // 標一題「答案有疑問」：標記也要跟著備份走
+    await a.waitForSelector('.study-q .btn.doubt[aria-pressed="true"]');
     const dumpA = await dumpRecords(a);
     await gotoView(a, base + '#/settings');
     await (await a.waitForSelector('#backup-prepare')).click();
@@ -1225,6 +1265,7 @@ async function backupTest(browser, base) {
     const done = await b.waitForSelector('#backup-done').then(e => e.evaluate(x => x.textContent)).catch(() => '');
     const dumpB = await dumpRecords(b);
     const same = k => JSON.stringify(dumpB[k]) === JSON.stringify(dumpA[k]);
+    check(`還原：「答案有疑問」標記也還原了（${Object.keys(dumpA.meta.doubts || {}).length} 題）`, Object.keys(dumpA.meta.doubts || {}).length === 1 && same('meta'));
     check(`還原：B 的作答紀錄、每題進度、錯題本、讀書與模擬考紀錄＝A（一字不差）；畫面寫「核對過筆數」`,
       same('attempts') && same('progress') && same('mistakes') && same('meta') && done.includes('核對過筆數'),
       ['attempts', 'progress', 'mistakes', 'meta'].filter(k => !same(k)).join('、') + `｜${done}`);
@@ -1508,6 +1549,7 @@ async function main() {
     await lookTest(browser, base, process.env.CERTQUIZ_SHOTS || '');
     await persistTest(browser, base);
     await weakTest(browser, base);
+    await doubtTest(browser, base);
     await backupTest(browser, base);
     await ethicsTest(browser, base);
     await missingBankTest(browser);

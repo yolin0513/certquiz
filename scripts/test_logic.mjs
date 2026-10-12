@@ -403,5 +403,23 @@ if (existsSync(real)) {
   check('弱點複習：各範圍答對率都不低於整體 → 不指認弱點', even.group === null);
 }
 
+// 「答案有疑問」標記（U6）：標／取消來回、不改原本的物件；清單只列這張證照、新的在前；不在題庫的題另外列；跟著備份走、壞格式擋
+{
+  const a = q('bic-law-t47-001'), b = q('bic-law-t47-002');
+  const d0 = {};
+  const d1 = L.toggleDoubt(d0, a, 100);
+  const d2 = L.toggleDoubt(d1, b, 200);
+  check('標記：標了兩題、原本的物件沒被改', Object.keys(d2).length === 2 && Object.keys(d0).length === 0 && Object.keys(d1).length === 1);
+  check('標記：再按一次取消', !L.toggleDoubt(d2, a, 300)['bic-law-t47-001'] && Object.keys(L.toggleDoubt(d2, a, 300)).length === 1);
+  const other = { ...d2, 'ethics-116-gen-001': { cert: 'ethics', ts: 999 }, 'bic-law-t99-001': { cert: 'bic', ts: 50 } };
+  const lst = L.doubtList(other, [a, b], 'bic');
+  check('標記清單：只列這張證照、新標的在前；題庫裡找不到的另外列題號',
+    lst.items.map(x => x.q.id).join() === 'bic-law-t47-002,bic-law-t47-001' && lst.missing.join() === 'bic-law-t99-001');
+  const bk = L.makeBackup({ attempts: [], progress: [], mistakes: [], meta: { doubts: other } }, 0, 'x');
+  const back = L.validateBackup(JSON.parse(JSON.stringify(bk)));
+  check('標記跟著備份走：來回一趟一字不差', back.ok && JSON.stringify(back.data.meta.doubts) === JSON.stringify(other), back.errors.join('；'));
+  check('備份裡的標記格式不對（缺證照）→ 整份不收', !L.validateBackup({ ...JSON.parse(JSON.stringify(bk)), meta: { doubts: { x: { ts: 1 } } } }).ok);
+}
+
 console.log(fails ? `TEST-LOGIC FAILED：${fails} 項不符` : 'TEST-LOGIC OK：全部符合');
 process.exit(fails ? 1 : 0);

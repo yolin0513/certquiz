@@ -186,7 +186,8 @@ async function practiceView(gen, q) {
         item.explain ? h('p', { class: 'explain', text: item.explain }) : null,
         item.basis ? h('p', { class: 'src basis', text: L.basisText(item) }) : null,
         answerChangeNote(item, questions),
-        lawNote(item, lawSum));
+        lawNote(item, lawSum),
+        doubtButton(item));
       feedback.hidden = false;
       next.hidden = false;
       results.push({ item, k, correct });
@@ -495,6 +496,7 @@ async function importStudyView(gen, q, cert, questions) {
         optsList(x.rep),
         h('p', { class: 'src', text: L.sourceLabel(x.rep) }),
         lawNote(x.rep, lawSum),
+        doubtButton(x.rep),
         x.variants.length ? h('details', {}, h('summary', { text: `其他期的問法（${x.variants.length}）` }),
           x.variants.map(v => h('div', { class: 'variant' }, h('p', { class: 'stem', text: v.stem }),
             h('p', { class: 'muted', text: `正解：(${v.answer}) ${v.options[v.answer - 1]}` }), h('p', { class: 'src', text: L.sourceLabel(v) })))) : null)),
@@ -527,7 +529,8 @@ async function importStudyView(gen, q, cert, questions) {
       h('p', { class: 'stem', text: x.stem }),
       optsList(x),
       h('p', { class: 'src', text: L.sourceLabel(x) }),
-      lawNote(x, lawSum))));
+      lawNote(x, lawSum),
+      doubtButton(x))));
 }
 
 // ---------------------------------------------------------------- 法規修正標示（N1，Dispatch 2026-10-12）
@@ -668,7 +671,8 @@ async function versionedStudyView(gen, q, cert, questions) {
         h('p', { class: 'src', text: `${subjName.get(x.subject)}・${L.sourceLabel(x)}` }),
         h('p', { class: 'stem', text: x.stem }), opts(x),
         nw ? h('div', { class: 'variant' }, h('p', { class: 'muted', text: `116 年版的這題（第 ${nw.qno} 題）：` }),
-          h('p', { class: 'stem', text: nw.stem }), h('p', { class: 'ok', text: `正解：(${nw.answer}) ${nw.options[nw.answer - 1]}` })) : null);
+          h('p', { class: 'stem', text: nw.stem }), h('p', { class: 'ok', text: `正解：(${nw.answer}) ${nw.options[nw.answer - 1]}` })) : null,
+        doubtButton(x));
     }),
     pager);
 }
@@ -694,11 +698,52 @@ async function statsView(gen, q) {
       h('p', { class: 'muted', text: '作答次數含練習與模擬考；同一題做多次會算多次。' })),
     table('依科目', L.groupRate(attempts, byId, x => x.subject), k => subjName.get(k) || k),
     table('依題目來源', L.groupRate(attempts, byId, x => x.source), k => srcName[k] || k),
+    (d => h('section', { class: 'card', id: 'doubts-link' }, h('h3', { text: '答案有疑問' }),
+      h('p', { text: d.items.length ? `你標了 ${d.items.length} 題「答案有疑問」。` : '還沒有標記。作答後或讀書頁上可以按「標記：答案有疑問」。' }),
+      d.items.length ? h('a', { class: 'btn', href: `#/doubts?cert=${certId}`, text: `看這 ${d.items.length} 題` }) : null))(L.doubtList(await DB.getMeta('doubts', {}), questions, certId)),
     h('section', { class: 'card' }, h('h3', { text: '最近的模擬考' }),
       hist.length ? h('table', {}, h('tr', {}, ['日期', '科目', '分數', '結果'].map(t => h('th', { text: t }))),
         hist.map(x => h('tr', {}, h('td', { text: new Date(x.ts).toLocaleDateString('zh-TW') }), h('td', { text: subjName.get(x.subject) || x.subject }),
           h('td', { text: String(x.score) }), h('td', { class: x.passed ? 'ok' : 'ng', text: x.passed ? '及格' : '不及格' }))))
         : h('p', { class: 'muted', text: '還沒有模擬考紀錄。' })));
+}
+
+// ---------------------------------------------------------------- 「答案有疑問」（U6）
+// 標記只是一份清單，之後一起對照官方資料看；App 不改答案、不寫自己的解析。
+function doubtButton(item) {
+  const btn = h('button', { class: 'btn doubt', type: 'button', 'data-qid': item.id, 'aria-pressed': 'false', text: '標記：答案有疑問' });
+  const paint = d => {
+    const on = !!(d && d[item.id]);
+    btn.textContent = on ? '已標記「答案有疑問」（再按一次取消）' : '標記：答案有疑問';
+    btn.classList.toggle('on', on);
+    btn.setAttribute('aria-pressed', on ? 'true' : 'false');
+  };
+  DB.getMeta('doubts', {}).then(paint);
+  btn.addEventListener('click', async () => {
+    const d = L.toggleDoubt(await DB.getMeta('doubts', {}), item, Date.now());
+    await DB.setMeta('doubts', d);
+    paint(d);
+  });
+  return btn;
+}
+
+async function doubtsView(gen, q) {
+  const certId = q.get('cert');
+  const { cert, questions } = await loadPool(certId);
+  const d = L.doubtList(await DB.getMeta('doubts', {}), questions, certId);
+  const lawSum = L.lawSummary(questions);
+  render(gen, h('a', { class: 'back', href: `#/stats?cert=${certId}`, text: '← 回統計' }),
+    h('section', { class: 'card' }, h('h2', { text: `${cert.short}：答案有疑問（${d.items.length} 題）` }),
+      h('p', { text: '這些是你標了「答案有疑問」的題。App 不改答案，也不寫解析；之後一起對照官方資料看。' }),
+      lawSum.total ? h('p', { class: 'muted', text: '內控的題目：有些可能是法規在考試後修正過，請先看每題下面的法規說明。' }) : null,
+      d.missing.length ? h('p', { class: 'muted', text: `另有 ${d.missing.length} 題已不在目前的題庫裡（可能重新匯入時換掉了）：${d.missing.join('、')}` }) : null),
+    d.items.map(({ q: x, ts }) => h('section', { class: 'card study-q doubt-item' },
+      h('p', { class: 'muted', text: `${stamp(ts)} 標記・${L.sourceLabel(x)}` }),
+      h('p', { class: 'stem', text: x.stem }),
+      h('ol', { class: 'study-opts' }, x.options.map((t, k) => h('li', { class: k + 1 === x.answer ? 'right' : null },
+        h('span', { text: t }), k + 1 === x.answer ? h('b', { text: '（官方正解）' }) : null))),
+      lawNote(x, lawSum),
+      doubtButton(x))));
 }
 
 // ---------------------------------------------------------------- 設定：匯入題目
@@ -851,6 +896,7 @@ async function route() {
     else if (path === '/practice') await practiceView(gen, q);
     else if (path === '/exam') await examView(gen, q);
     else if (path === '/stats') await statsView(gen, q);
+    else if (path === '/doubts') await doubtsView(gen, q);
     else if (path === '/study') await studyView(gen, q);
     else if (path === '/settings') await settingsView(gen);
     else go('#/');
