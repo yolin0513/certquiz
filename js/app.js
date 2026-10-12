@@ -85,11 +85,12 @@ async function homeView(gen) {
             : h('p', { class: 'stat' }, `可練 ${active.length} 題`, dup ? `（另有${dup.slice(1)}` : '');
         })(),
         h('p', { class: 'stat' }, `已作答 ${s.answered} 次，答對率 ${s.answered ? pct(s.rate) : '—'}，錯題 ${mistakes.length} 題`),
-        // 按鈕一律兩欄等寬的格子、順序固定（讀書、練習、錯題、統計，再接模擬考），兩張卡片才排得齊
+        // 按鈕一律兩欄等寬的格子、順序固定（讀書、練習、錯題、弱點、統計，再接模擬考），兩張卡片才排得齊
         h('div', { class: 'actions' },
           h('a', { class: 'btn primary', href: `#/study?cert=${c.id}`, text: '讀書' }),
           h('a', { class: 'btn', href: `#/setup?cert=${c.id}`, text: '開始練習' }),
           h('a', { class: 'btn', href: `#/practice?cert=${c.id}&mode=mistakes&count=20`, 'aria-disabled': mistakes.length ? null : 'true', text: `錯題複習 ${mistakes.length}` }),
+          h('a', { class: 'btn', href: `#/practice?cert=${c.id}&mode=weak&count=20`, text: '弱點複習' }),
           h('a', { class: 'btn', href: `#/stats?cert=${c.id}`, text: '統計' }),
           c.subjects.filter(s => s.exam).map(s => h('a', { class: 'btn', href: `#/exam?cert=${c.id}&subject=${s.id}`,
             text: `模擬考：${s.short || s.name}` })),
@@ -129,12 +130,20 @@ async function setupView(gen, q) {
 // ---------------------------------------------------------------- 練習
 async function practiceView(gen, q) {
   const certId = q.get('cert');
-  const mode = q.get('mode') === 'mistakes' ? 'mistakes' : 'practice';
+  const mode = ['mistakes', 'weak'].includes(q.get('mode')) ? q.get('mode') : 'practice';
   const { cert, questions } = await loadPool(certId);
-  let picked;
+  let picked, plan = null;
   if (mode === 'mistakes') {
+    // 到期的錯題排前面（還沒到期的答對不算進度，見 L.nextMistakeState）
+    const now = Date.now();
     const ms = new Map((await DB.getAll('mistakes', certId)).map(m => [m.qid, m]));
-    picked = L.shuffle(questions.filter(x => ms.has(x.id)), L.rng(Date.now())).slice(0, Number(q.get('count')) || 20);
+    const all = L.shuffle(questions.filter(x => ms.has(x.id)), L.rng(now));
+    picked = all.filter(x => L.mistakeDue(ms.get(x.id)) <= now).concat(all.filter(x => L.mistakeDue(ms.get(x.id)) > now)).slice(0, Number(q.get('count')) || 20);
+  } else if (mode === 'weak') {
+    const now = Date.now();
+    plan = L.weakPlan(questions, { attempts: await DB.getAll('attempts', certId), mistakes: await DB.getAll('mistakes', certId),
+      progress: new Map((await DB.getAll('progress', certId)).map(p => [p.qid, p])), count: Number(q.get('count')) || 20, now });
+    picked = plan.items;
   } else {
     const prog = new Map((await DB.getAll('progress', certId)).map(p => [p.qid, p]));
     picked = L.pickQuestions(questions, { subject: q.get('subject') || 'all', source: q.get('source') || 'all',
@@ -144,7 +153,7 @@ async function practiceView(gen, q) {
   }
   if (!picked.length) {
     render(gen, h('a', { class: 'back', href: '#/', text: '← 回首頁' }),
-      h('section', { class: 'card' }, h('p', { text: mode === 'mistakes' ? '錯題本是空的。' : '這個條件下沒有題目。' })));
+      h('section', { class: 'card' }, h('p', { text: mode === 'mistakes' ? '錯題本是空的。' : mode === 'weak' ? '沒有到期的錯題，也沒有可以補的題（題目都做過了）。' : '這個條件下沒有題目。' })));
     return;
   }
   const studiedMap = await DB.getMeta('studied', {});
@@ -169,7 +178,10 @@ async function practiceView(gen, q) {
         if (bk === item.answer) b.classList.add('right');
         else if (bk === k) b.classList.add('wrong');
       }
+      const prev = await DB.get('mistakes', item.id);
+      const nextState = L.nextMistakeState(prev, correct, mode, Date.now());
       fill(feedback, h('p', { class: correct ? 'ok' : 'ng', text: correct ? '答對了' : `答錯了，正解是 (${item.answer})` }),
+        mistakeNote(prev, nextState, correct, mode),
         h('p', { class: 'src', text: L.sourceLabel(item) }),
         item.explain ? h('p', { class: 'explain', text: item.explain }) : null,
         item.basis ? h('p', { class: 'src basis', text: L.basisText(item) }) : null,
@@ -178,9 +190,7 @@ async function practiceView(gen, q) {
       feedback.hidden = false;
       next.hidden = false;
       results.push({ item, k, correct });
-      const prev = await DB.get('mistakes', item.id);
-      await DB.recordAnswer({ q: item, chosen: k, correct, mode, mistakeState: L.nextMistakeState(prev, correct, mode, Date.now()),
-        studied: studiedBefore(studiedMap, item) });
+      await DB.recordAnswer({ q: item, chosen: k, correct, mode, mistakeState: nextState, studied: studiedBefore(studiedMap, item) });
     }
 
     render(gen,
@@ -209,7 +219,33 @@ async function practiceView(gen, q) {
           h('a', { class: 'btn', href: '#/', text: '回首頁' }))));
   };
 
+  if (plan) {
+    // 弱點複習：開始前先講清楚這一輪出了什麼、為什麼（數字從紀錄算，門檻寫明）
+    const obj = k => cert.syllabus && cert.syllabus.objectives.find(o => o.id === k);
+    const nm = k => (obj(k) ? `${k} ${obj(k).name}` : null) || (cert.subjects.find(x => x.id === k) || {}).name || k;
+    const g = plan.group;
+    render(gen, h('a', { class: 'back', href: '#/', text: '← 回首頁' }),
+      h('section', { class: 'card', id: 'weak-plan' }, h('h2', { text: `${cert.short}：弱點複習 ${picked.length} 題` }),
+        h('ul', {},
+          h('li', { text: `到期的錯題 ${plan.parts.due} 題${plan.dueTotal > plan.parts.due ? `（到期的一共 ${plan.dueTotal} 題，這一輪先出 ${plan.parts.due} 題）` : ''}` }),
+          g ? h('li', { text: `最弱的範圍「${nm(g.key)}」${plan.parts.weak} 題：這個範圍作答 ${g.answered} 次、答對率 ${pct(g.rate)}，低於你整體的 ${pct(plan.overall)}。先出上次答錯的，再出沒做過的。` })
+            : h('li', { text: `還找不出弱點範圍：每個範圍要作答 ${L.WEAK_MIN_ATTEMPTS} 次以上才比較，而且答對率要低於整體才算弱。${plan.overall === null ? '目前還沒有作答紀錄。' : ''}` }),
+          plan.parts.fill ? h('li', { text: `補上沒做過的題 ${plan.parts.fill} 題（湊滿這一輪用，不是弱點）。` }) : null),
+        h('p', { class: 'muted', text: `錯題要隔 ${L.MISTAKE_INTERVAL_DAYS} 天再答對一次才移出：答錯後先在複習裡答對一次，${L.MISTAKE_INTERVAL_DAYS} 天後到期再答對，才算記住。還沒到期就答對，不算進度。` }),
+        h('button', { class: 'btn primary', type: 'button', id: 'weak-start', text: '開始', onclick: () => showQuestion() })));
+    return;
+  }
   showQuestion();
+}
+
+// 作答後告訴使用者這題在錯題本裡的狀態（隔天數規則在 L.nextMistakeState）
+function mistakeNote(prev, next, correct, mode) {
+  if (!correct) return h('p', { class: 'src', text: prev ? '還在錯題本：要重新數（隔天數規則重來）。' : '已加進錯題本。' });
+  if (!prev) return null;
+  if (!['mistakes', 'weak'].includes(mode)) return h('p', { class: 'src', text: '這題在錯題本裡；一般練習答對不會移出，要在錯題複習或弱點複習答對。' });
+  if (next === null) return h('p', { class: 'ok', text: '已移出錯題本（隔一段時間後仍答對）。' });
+  if (next === prev) return h('p', { class: 'src', text: `這題還沒到期（${new Date(L.mistakeDue(prev)).toLocaleDateString('zh-TW')} 到期），這次答對不算進度。` });
+  return h('p', { class: 'src', text: `答對一次。${L.MISTAKE_INTERVAL_DAYS} 天後（${new Date(next.due).toLocaleDateString('zh-TW')}）到期，那時再答對就移出錯題本。` });
 }
 
 // ---------------------------------------------------------------- 模擬考

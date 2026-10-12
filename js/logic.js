@@ -182,13 +182,64 @@ export function pickQuestions(pool, opts, progress = new Map()) {
   return ordered.slice(0, Math.max(0, opts.count | 0));
 }
 
+// ---------------------------------------------------------------- 錯題本與弱點複習（U5，2026-10-12）
+// 錯題要「隔一段時間再答對」才移出：答錯→馬上到期；在複習模式答對一次→隔 MISTAKE_INTERVAL_DAYS 天再到期；
+// 到期後再答對一次→移出（共 MISTAKE_CLEAR_STREAK 次）。還沒到期就先答對，不算進度（剛看過答案馬上答對，不代表記住了）。
+export const MISTAKE_INTERVAL_DAYS = 2;
+const DAY = 86400000;
+const REVIEW_MODES = new Set(['mistakes', 'weak']);
+
+/** 錯題什麼時候到期（舊紀錄沒有 due＝已到期）。 */
+export function mistakeDue(m) {
+  return typeof m.due === 'number' ? m.due : 0;
+}
+
 /** 作答後錯題本的新狀態。回傳 null 表示不在錯題本（或該移出）。 */
 export function nextMistakeState(prev, correct, mode, now) {
-  if (!correct) return { wrongCount: (prev?.wrongCount || 0) + 1, streak: 0, ts: now };
+  if (!correct) return { wrongCount: (prev?.wrongCount || 0) + 1, streak: 0, ts: now, due: now };
   if (!prev) return null;                       // 答對、本來就不在錯題本
-  if (mode !== 'mistakes') return prev;         // 一般練習答對不移出，避免猜對就消失
+  if (!REVIEW_MODES.has(mode)) return prev;     // 一般練習、模擬考答對不移出，避免猜對就消失
+  if (mistakeDue(prev) > now) return prev;      // 還沒到期就答對：不算進度
   const streak = (prev.streak || 0) + 1;
-  return streak >= MISTAKE_CLEAR_STREAK ? null : { ...prev, streak, ts: now };
+  return streak >= MISTAKE_CLEAR_STREAK ? null : { ...prev, streak, ts: now, due: now + MISTAKE_INTERVAL_DAYS * DAY };
+}
+
+/**
+ * 弱點複習要出哪些題（純函式，好測）。
+ * 1. 先出到期的錯題。
+ * 2. 再出「最弱的範圍」的題：範圍＝AZ-900 依官方大綱節次、其他依科目；作答 ≥ WEAK_MIN_ATTEMPTS 次才比較，
+ *    而且答對率要低於整體答對率才算弱（不然就沒有「弱點」可言）。範圍內先出上次答錯的、再出沒做過的、再出其他。
+ * 3. 還不夠就補沒做過的題，畫面上照實寫「補的」。
+ * 回傳 { items, parts: { due, weak, fill }, group, overall, groups, dueTotal }。
+ */
+export const WEAK_MIN_ATTEMPTS = 10;
+export function weakGroupKey(q) {
+  return q.objective || q.subject;
+}
+export function weakPlan(pool, { attempts, progress, mistakes, count, now, seed }) {
+  const rand = rng(seed ?? now);
+  const qs = pool.filter(q => isActive(q) && inScope(q));
+  const byId = new Map(qs.map(q => [q.id, q]));
+  const dueAll = mistakes.filter(m => byId.has(m.qid) && mistakeDue(m) <= now);
+  const due = shuffle(dueAll.map(m => byId.get(m.qid)), rand).slice(0, count);
+  const used = new Set(due.map(q => q.id));
+  const att = attempts.filter(a => byId.has(a.qid));
+  const overall = att.length ? att.filter(a => a.correct).length / att.length : null;
+  const groups = [...groupRate(att, byId, weakGroupKey)].map(([key, g]) => ({ key, ...g }))
+    .filter(g => g.answered >= WEAK_MIN_ATTEMPTS).sort((a, b) => a.rate - b.rate || b.answered - a.answered);
+  const weakest = overall !== null && groups.length && groups[0].rate < overall ? groups[0] : null;
+  let weak = [];
+  if (weakest && due.length < count) {
+    const inG = qs.filter(q => weakGroupKey(q) === weakest.key && !used.has(q.id));
+    const lastWrong = shuffle(inG.filter(q => progress.get(q.id)?.last === false), rand);
+    const unseen = shuffle(inG.filter(q => !(progress.get(q.id)?.seen > 0)), rand);
+    const rest = shuffle(inG.filter(q => progress.get(q.id)?.seen > 0 && progress.get(q.id)?.last !== false), rand);
+    weak = lastWrong.concat(unseen, rest).slice(0, count - due.length);
+    weak.forEach(q => used.add(q.id));
+  }
+  const fill = shuffle(qs.filter(q => !used.has(q.id) && !(progress.get(q.id)?.seen > 0)), rand).slice(0, count - due.length - weak.length);
+  return { items: due.concat(weak, fill), parts: { due: due.length, weak: weak.length, fill: fill.length },
+    group: weakest, overall, groups, dueTotal: dueAll.length };
 }
 
 /** 依答題記錄算統計：{ answered, correct, rate } */

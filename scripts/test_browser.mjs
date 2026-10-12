@@ -1021,14 +1021,14 @@ async function lookTest(browser, base, shotDir) {
         gr.bad.length === 0 && gr.real.length >= 2, gr.bad.slice(0, 5).join('；'));
     }
     const order = await page.$$eval('#view .card .actions', as => as.map(a => [...a.querySelectorAll('.btn')].map(b => b.textContent.replace(/ \d+$/, ''))));
-    check(`首頁：${order.length} 張卡片前四個按鈕順序相同（${order[0] ? order[0].slice(0, 4).join('、') : ''}）`,
-      order.length >= 2 && order.every(o => JSON.stringify(o.slice(0, 4)) === JSON.stringify(order[0].slice(0, 4))), JSON.stringify(order));
+    check(`首頁：${order.length} 張卡片前五個按鈕順序相同（${order[0] ? order[0].slice(0, 5).join('、') : ''}）`,
+      order.length >= 2 && order.every(o => JSON.stringify(o.slice(0, 5)) === JSON.stringify(['讀書', '開始練習', '錯題複習', '弱點複習', '統計'])), JSON.stringify(order));
     const bicOrder = await page.$$eval('#view .card', cs => { const c = cs.find(x => x.querySelector('a[href*="cert=bic&mode=mistakes"]'));
       return c ? [...c.querySelectorAll('.actions .btn')].map(b => b.textContent.replace(/ \d+$/, '')) : []; });
     const mk = await page.$eval('#view .card .actions a[href*="cert=bic&mode=mistakes"]', b => b.textContent);
     check(`首頁：錯題數三位數（${mk}）時，上面兩種寬度量到的按鈕仍是一行、等高`, /^錯題複習 1\d\d$/.test(mk), mk);
     check('首頁：模擬考按鈕寫科目名，沒有括號（「模擬考：法規」「模擬考：實務」）',
-      JSON.stringify(bicOrder.slice(4)) === JSON.stringify(['模擬考：法規', '模擬考：實務']), JSON.stringify(bicOrder));
+      JSON.stringify(bicOrder.slice(5)) === JSON.stringify(['模擬考：法規', '模擬考：實務']), JSON.stringify(bicOrder));
     // 大綱目錄：讀過的細項用文字標「已讀」，不靠連結顏色
     await gotoView(page, base + '?r=' + Date.now() + '#/study?cert=az900');
     await page.waitForSelector('.item');
@@ -1074,6 +1074,78 @@ async function persistTest(browser, base) {
     } finally {
       await ctx.close();
     }
+  }
+}
+
+// ---------------------------------------------------------------- 二之九之一、弱點複習與錯題隔天再考（U5）
+// 一題錯題走完整一輪：答錯 → 複習答對一次（2 天後到期）→ 馬上再答對（不算）→ 撥時間 3 天 → 答對 → 移出錯題本。
+async function weakTest(browser, base) {
+  console.log('== 二之九之一、弱點複習：開始前講清楚出了什麼；錯題要隔天數再答對才移出');
+  const pack = JSON.parse(readFileSync(PACK, 'utf-8'));
+  const byStem = new Map(pack.questions.filter(q => !q.dupOf).map(q => [q.stem + '|' + q.options.join('|'), q]));
+  const ctx = await browser.createBrowserContext();
+  const errors = [];
+  const page = await newPage(ctx, errors);
+  await page.evaluateOnNewDocument(() => {
+    const real = Date.now.bind(Date);
+    let skew = 0;
+    Date.now = () => real() + skew;
+    window.__skip = ms => { skew += ms; };
+  });
+  const cur = () => page.evaluate(() => document.querySelector('.stem').textContent + '|' + [...document.querySelectorAll('.opt span:last-child')].map(e => e.textContent).join('|'));
+  const mistakesNow = () => page.evaluate(() => new Promise(r => { const q = indexedDB.open('certquiz'); q.onsuccess = () => {
+    const g = q.result.transaction('mistakes').objectStore('mistakes').getAll(); g.onsuccess = () => r(g.result); }; }));
+  // 在某個模式裡一直作答，直到碰到目標題（其他題都答對、不影響錯題本以外的判斷）；回傳那一題作答後的錯題提示
+  const answerTarget = async (url, target, rightAnswer) => {
+    await gotoView(page, base + '#/');   // 同網址 goto 不會換頁：先回首頁
+    await waitText(page, '證照題庫練習');
+    await gotoView(page, url);
+    for (let i = 0; i < 25; i++) {
+      await page.waitForSelector('.opt:not([disabled])');
+      const k = await cur();
+      const qq = byStem.get(k);
+      const isT = qq && qq.id === target;
+      await page.click(`.opt[data-k="${isT ? (rightAnswer ? qq.answer : (qq.answer % 4) + 1) : qq.answer}"]`);
+      await page.waitForSelector('.feedback:not([hidden])');
+      if (isT) return page.$eval('.feedback', f => f.innerText);
+      await page.click('.q .btn.primary');
+    }
+    return null;
+  };
+  try {
+    await gotoView(page, base);
+    await waitText(page, '證照題庫練習');
+    await importPack(page, PACK, pack.counts.active);
+    // 沒有任何紀錄時：弱點複習照實說「還找不出弱點範圍」，題目全是補的
+    await gotoView(page, base + '#/practice?cert=bic&mode=weak&count=20');
+    const empty = await page.$eval('#weak-plan', e => e.innerText).catch(() => '');
+    check('弱點複習（還沒作答）：寫「到期的錯題 0 題」「還找不出弱點範圍」，其餘 20 題標成補的', empty.includes('到期的錯題 0 題') && empty.includes('還找不出弱點範圍') && empty.includes('補上沒做過的題 20 題'), empty.slice(0, 200));
+    // 練 10 題全部選 (1)：有對有錯，答錯的進錯題本
+    await practiceRound(page, 10);
+    const ms = await mistakesNow();
+    const target = ms[0] && ms[0].qid;
+    await gotoView(page, base + '#/practice?cert=bic&mode=weak&count=20');
+    const plan = await page.$eval('#weak-plan', e => e.innerText).catch(() => '');
+    check(`弱點複習：開始前的說明寫出到期的錯題 ${ms.length} 題（＝錯題本裡的）`, ms.length > 0 && plan.includes(`到期的錯題 ${ms.length} 題`), plan.slice(0, 200));
+    await (await page.waitForSelector('#weak-start')).click();
+    const first = byStem.get(await cur());
+    check('弱點複習：第一題是到期的錯題', !!first && ms.some(m => m.qid === first.id));
+    // 目標錯題：複習答對一次 → 「2 天後到期」
+    const n1 = await answerTarget(base + '#/practice?cert=bic&mode=mistakes&count=20', target, true);
+    const s1 = (await mistakesNow()).find(m => m.qid === target);
+    check('錯題：複習答對一次 → 還在錯題本、提示「2 天後到期」', !!s1 && s1.streak === 1 && n1 && n1.includes('天後') && n1.includes('到期'), n1);
+    // 馬上再答對 → 不算進度
+    const n2 = await answerTarget(base + '#/practice?cert=bic&mode=mistakes&count=20', target, true);
+    const s2 = (await mistakesNow()).find(m => m.qid === target);
+    check('錯題：還沒到期就再答對 → 不算進度、提示「這次答對不算進度」', !!s2 && s2.streak === 1 && n2 && n2.includes('這次答對不算進度'), n2);
+    // 撥時間 3 天 → 到期 → 答對 → 移出
+    await page.evaluate(() => window.__skip(3 * 86400000));
+    const n3 = await answerTarget(base + '#/practice?cert=bic&mode=mistakes&count=20', target, true);
+    const s3 = (await mistakesNow()).find(m => m.qid === target);
+    check('錯題：3 天後到期再答對 → 移出錯題本、提示「已移出錯題本」', !s3 && n3 && n3.includes('已移出錯題本'), n3);
+    check('弱點複習：沒有頁面錯誤', errors.length === 0, errors.join('；'));
+  } finally {
+    await ctx.close();
   }
 }
 
@@ -1435,6 +1507,7 @@ async function main() {
     await importStudyTest(browser, base);
     await lookTest(browser, base, process.env.CERTQUIZ_SHOTS || '');
     await persistTest(browser, base);
+    await weakTest(browser, base);
     await backupTest(browser, base);
     await ethicsTest(browser, base);
     await missingBankTest(browser);

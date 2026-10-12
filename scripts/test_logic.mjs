@@ -51,10 +51,18 @@ check('同一個種子抽到同一組（可重現）', s1 === s2);
 // 錯題本規則
 check('答錯 → 進錯題本', L.nextMistakeState(null, false, 'practice', 1)?.wrongCount === 1);
 check('一般練習答對 → 不移出', L.nextMistakeState({ wrongCount: 1, streak: 0 }, true, 'practice', 2)?.wrongCount === 1);
-const m1 = L.nextMistakeState({ wrongCount: 1, streak: 0 }, true, 'mistakes', 3);
-check(`錯題模式答對 1 次 → 還在（要連續 ${L.MISTAKE_CLEAR_STREAK} 次）`, m1?.streak === 1);
-check('錯題模式連續答對 2 次 → 移出', L.nextMistakeState(m1, true, 'mistakes', 4) === null);
-check('錯題模式答對後又答錯 → 連續次數歸零', L.nextMistakeState(m1, false, 'mistakes', 5)?.streak === 0);
+// 錯題要隔一段時間再答對才移出（U5）：答錯→馬上到期；複習模式答對一次→隔 MISTAKE_INTERVAL_DAYS 天到期；到期後再答對→移出
+const D = 86400000;
+const m0 = L.nextMistakeState(null, false, 'practice', 1000);
+check('答錯 → 進錯題本、馬上到期', m0?.due === 1000 && m0.streak === 0);
+const m1 = L.nextMistakeState({ wrongCount: 1, streak: 0, due: 3 }, true, 'mistakes', 3);
+check(`錯題模式答對 1 次 → 還在、${L.MISTAKE_INTERVAL_DAYS} 天後到期`, m1?.streak === 1 && m1.due === 3 + L.MISTAKE_INTERVAL_DAYS * D);
+check('還沒到期就再答對 → 不算進度（狀態不變）', L.nextMistakeState(m1, true, 'mistakes', 4) === m1);
+check(`到期後再答對 → 移出（共 ${L.MISTAKE_CLEAR_STREAK} 次）`, L.nextMistakeState(m1, true, 'mistakes', m1.due) === null);
+check('弱點複習模式也算複習：到期後答對 → 移出', L.nextMistakeState(m1, true, 'weak', m1.due + 1) === null);
+check('模擬考答對 → 不移出、不算進度', L.nextMistakeState(m1, true, 'exam', m1.due + 1) === m1);
+check('錯題模式答對後又答錯 → 連續次數歸零、馬上到期', (x => x?.streak === 0 && x.due === 5)(L.nextMistakeState(m1, false, 'mistakes', 5)));
+check('舊紀錄沒有到期時間 → 當作已到期', L.mistakeDue({ wrongCount: 1, streak: 1 }) === 0 && L.nextMistakeState({ wrongCount: 1, streak: 1 }, true, 'mistakes', 9) === null);
 
 // 出處標示：原創題一定寫「不是考題」
 check('原創題標「不是考題」', L.sourceLabel({ source: 'original-ai' }).includes('不是考題'));
@@ -368,6 +376,31 @@ if (existsSync(real)) {
     const r = L.validateBackup(JSON.parse(JSON.stringify(x)));
     check(`備份：${d} → 整份不收、訊息點名「${why}」`, !r.ok && !r.data && r.errors.some(e => e.includes(why)), r.errors.join('；'));
   }
+}
+
+// 弱點複習（U5）：到期錯題先出；最弱範圍要作答夠多、而且低於整體才算；範圍內先出上次答錯的；不夠就補沒做過的，照實分開計
+{
+  const mk = (id, subject) => q(id, { subject });
+  const pool = [...Array.from({ length: 30 }, (_, i) => mk(`bic-law-t47-${String(i + 1).padStart(3, '0')}`, 'law')),
+    ...Array.from({ length: 30 }, (_, i) => mk(`bic-gen-t47-${String(i + 1).padStart(3, '0')}`, 'gen'))];
+  const at = (qid, correct) => ({ cert: 'bic', qid, correct, chosen: 1, mode: 'practice', ts: 1 });
+  // 法規 12 次答對 3 次（25%）、實務 12 次答對 11 次（92%）；整體 58%
+  const attempts = [...Array.from({ length: 12 }, (_, i) => at(`bic-law-t47-${String(i + 1).padStart(3, '0')}`, i < 3)),
+    ...Array.from({ length: 12 }, (_, i) => at(`bic-gen-t47-${String(i + 1).padStart(3, '0')}`, i < 11))];
+  const progress = new Map(attempts.map(a => [a.qid, { qid: a.qid, seen: 1, correct: a.correct ? 1 : 0, last: a.correct }]));
+  const now = 10 * D;
+  const mistakes = [{ qid: 'bic-gen-t47-012', cert: 'bic', streak: 0, due: now - 1 }, { qid: 'bic-law-t47-004', cert: 'bic', streak: 1, due: now + D }];
+  const p = L.weakPlan(pool, { attempts, progress, mistakes, count: 20, now, seed: 3 });
+  const ids = p.items.map(x => x.id);
+  check(`弱點複習：到期的錯題 1 題排第一（還沒到期的不出）`, p.parts.due === 1 && ids[0] === 'bic-gen-t47-012' && p.dueTotal === 1);
+  check(`弱點複習：最弱範圍是法規（${p.group && p.group.key}、${p.group && Math.round(p.group.rate * 100)}%，整體 ${Math.round(p.overall * 100)}%）`, p.group?.key === 'law' && p.group.answered === 12);
+  const weak = p.items.slice(1, 1 + p.parts.weak);
+  check(`弱點複習：範圍內先出上次答錯的 9 題，再出沒做過的；共 ${p.parts.weak} 題、全是法規、沒有重複`,
+    p.parts.weak === 19 && weak.every(x => x.subject === 'law') && weak.slice(0, 9).every(x => progress.get(x.id)?.last === false) && new Set(ids).size === ids.length);
+  const thin = L.weakPlan(pool, { attempts: attempts.slice(0, 9).concat(attempts.slice(12, 21)), progress, mistakes: [], count: 5, now, seed: 3 });
+  check(`弱點複習：每個範圍作答不到 ${L.WEAK_MIN_ATTEMPTS} 次 → 不指認弱點，只補沒做過的題（照實計成「補的」）`, thin.group === null && thin.parts.fill === 5 && thin.parts.weak === 0);
+  const even = L.weakPlan(pool, { attempts: attempts.map(a => ({ ...a, correct: true })), progress, mistakes: [], count: 5, now, seed: 3 });
+  check('弱點複習：各範圍答對率都不低於整體 → 不指認弱點', even.group === null);
 }
 
 console.log(fails ? `TEST-LOGIC FAILED：${fails} 項不符` : 'TEST-LOGIC OK：全部符合');
