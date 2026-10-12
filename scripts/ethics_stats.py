@@ -703,16 +703,30 @@ nav a{color:var(--pri)}nav{display:flex;flex-wrap:wrap;gap:6px 14px;font-size:.9
             ("第二輪：只看最後一句，補關鍵字", f"{r2r['overall']:.0%}" if r2r else "—", "主要是定義不一致：「何者不是某類」程式判問錯、判斷者判其他；「應如何處理」判斷者算問對"),
             ("第三輪：先寫規格，兩邊照同一份規格", f"{rl['overall']:.0%}", "各類 " + "、".join(f"{CLS_NAME3[c]} {r:.0%}" for c, (r, n) in rl["per"].items()))])
         diag = f"<p>{esc(st['diagnosis'])}</p>" if st.get("diagnosis") else ""
+        # 換方法：模型逐題分類（docs/L 第 15 節）；結果檔由 scripts/ethics_modelcls.py report 寫
+        mcf = D / "modelcls" / "modelcls-result.json"
+        mc = json.loads(mcf.read_text(encoding="utf-8")) if mcf.exists() else None
+        mc_html = ""
+        if mc and mc.get("stab") and not mc["stab"]["pass"]:
+            rows3 += (f"<tr><td>換方法：模型逐題讀全部 1,174 題</td><td class=num>{mc['stab']['rate']:.0%}</td>"
+                      f"<td>卡在第一關「自己跟自己比」（門檻 95%）：同一個模型把同樣 {mc['stab']['n']} 題換個順序再分一次，就有 {round((1 - mc['stab']['rate']) * mc['stab']['n'])} 題分得不一樣，"
+                      "所以後面的獨立驗證沒有跑</td></tr>")
+            mc_html = ('<p><b>第四種做法也停了</b>：關鍵字分不出來，就改讓模型逐題讀懂再分。但同一個模型對同一批題連自己都對不上——'
+                       '分得不一樣的那幾題，都卡在規格本身的邊界：「何者不是應注意的事項」算屬不屬於某類還是問錯、「應拒絕哪一個」「最宜採用哪種方法」算問做法還是問名詞、'
+                       '「內容應包括哪些」算屬類還是問對。也就是說，<b>這一步卡住的不是分類工具，是「題目在問對還是問錯」對一部分題目本來就沒有唯一答案</b>。'
+                       '事先承諾這是最後一種方法；不再換方法、不再調門檻、不再改規格。</p>')
+        intro = ("試過三輪關鍵字、再換成模型逐題讀題，四次都沒過，所以不換算。這條路已經走完，不再試。" if mc_html
+                 else "試過三輪，三輪都沒過，所以不換算。這是最後一輪，不再試。")
         unanswered = (f'<section id="unanswered" class="alert"><h2>這份重點整理有一個它答不了的問題</h2>'
                       '<p class="alert-h">「看到這句話，它通常是對的還是錯的？」——答不了。</p>'
                       '<p>要回答它，得先知道每一題問的是「哪個對」還是「哪個錯」：問「哪個錯」的題目，正解是一句錯的敘述。這一步只能讓程式依題幹的字分，'
-                      '而事先定好：程式的分法要跟另一個獨立判斷者一致（整體 ≥ 90%、每一類 ≥ 85%），才拿來換算對錯。試過三輪，三輪都沒過，所以不換算。這是最後一輪，不再試。</p>'
+                      '而事先定好：程式的分法要跟另一個獨立判斷者一致（整體 ≥ 90%、每一類 ≥ 85%），才拿來換算對錯。' + intro + '</p>'
                       '<div class="tw"><table><thead><tr><th>做法</th><th>一致</th><th>沒過的地方</th></tr></thead><tbody>' + rows3 + '</tbody></table></div>'
-                      f'<p><b>第三輪不一致的題</b>：{esc(pairs) or "—"}。</p>{diag}'
+                      f'<p><b>第三輪不一致的題</b>：{esc(pairs) or "—"}。</p>{diag}{mc_html}'
                       '<p>能答的是「哪些說法常被選為答案」「哪些說法常被拿來當誘答」——那是直接數出來的，不靠任何分類。用的時候記得看題目問的是對還是錯。</p>'
                       '<h3>同一個資料夾裡的三份重點整理：哪份是最新的</h3>'
                       '<div class="tw"><table><thead><tr><th>檔名</th><th>是什麼</th></tr></thead><tbody>'
-                      '<tr><td>ethics-重點整理.html</td><td><b>最新版，以這份為準</b>（第三輪；就是你正在看的這份）</td></tr>'
+                      '<tr><td>ethics-重點整理.html</td><td><b>最新版，以這份為準</b>（三輪關鍵字＋換方法的結果都在這份；就是你正在看的這份）</td></tr>'
                       '<tr><td>ethics-重點整理-round2.html</td><td>第二輪的舊版，只留作紀錄。題型驗尺沒過</td></tr>'
                       '<tr><td>ethics-重點整理-round1.html</td><td>第一輪的舊版，只留作紀錄。題型驗尺沒過，組合型選項還混在排行裡（有兩份排行的前 10 名有兩到三成是假的）</td></tr>'
                       '</tbody></table></div><p class="muted">三份檔名看起來都很合理。沒有 round 字樣的那份才是最新的；舊版不要拿來背。</p></section>')
