@@ -7,7 +7,7 @@
     V2 repo HEAD 裡每一個追蹤中的檔，線上抓下來跟本機 HEAD 逐位元組相同（線上版本＝本機 HEAD）
     V3 只能留在本機的路徑線上都是 404（data/local/…、refs/…、匯入包、私人清單）
     V4 線上抓到的所有內容裡沒有任何內控官方題：①比對本機匯入包的題幹（R7 同一套）②沒有 tabf-official／user-import 來源欄位
-    V5 線上 data/manifest.json 的內控公開題數是 0、沒有內控的題庫檔
+    V5 線上 data/manifest.json 的內控、金融市場常識與職業道德公開題數都是 0、沒有題庫檔
 驗尺：V3 與 V4 都先用已知樣本證明抓得到（V3：本機 HEAD 確實有的檔要回 200；V4：拿一題真的題幹餵進同一個比對函式必須命中）。
 用法：python scripts/verify_live.py https://yolin0513.github.io/certquiz/
 結束碼：0 全部符合；1 有不符；2 驗尺失敗或前提不成立。
@@ -233,8 +233,10 @@ def run():
     st, body = fetch(base + "data/manifest.json")
     try:
         m = json.loads(body)
-        bic = next(c for c in m["certs"] if c["id"] == "bic")
-        check(f"V5 線上 manifest：內控公開題數 {bic['bundledCount']}、題庫檔 {bic['bundledFile']}", bic["bundledCount"] == 0 and bic["bundledFile"] is None)
+        # 只能留本機的題庫，線上公開題數必須是 0、沒有題庫檔：內控（TABF 歷屆）與金融市場常識與職業道德（證基會題庫，2026-10-12 加）
+        for cid in ("bic", "ethics"):
+            c = next(c for c in m["certs"] if c["id"] == cid)
+            check(f"V5 線上 manifest：{c.get('short', cid)} 公開題數 {c['bundledCount']}、題庫檔 {c['bundledFile']}", c["bundledCount"] == 0 and c["bundledFile"] is None)
     except (ValueError, KeyError, StopIteration) as e:
         check("V5 線上 manifest 讀得到", False, f"HTTP {st}：{e}")
 

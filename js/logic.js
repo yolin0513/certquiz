@@ -5,7 +5,8 @@ export const IMPORT_VERSION = 1;
 export const MISTAKE_CLEAR_STREAK = 2;   // 錯題在錯題模式連續答對幾次才移出
 
 const ID_RE = /^[a-z0-9]+(?:-[a-z0-9]+)+$/;
-const SOURCES = new Set(['tabf-official', 'user-import', 'original-ai', 'original-human']);
+const SOURCES = new Set(['tabf-official', 'user-import', 'sfi-official', 'original-ai', 'original-human']);
+const CHANGES = new Set(['added', 'modified', 'deleted']);   // 兩版題庫的差異（金融市場常識與職業道德，docs/L）
 
 /**
  * 驗證匯入包。回傳 { ok, errors[], cert, questions[] }。
@@ -34,9 +35,22 @@ export function validateImportPack(obj, knownCerts) {
     if (![1, 2, 3, 4].includes(q.answer)) errors.push(`${tag}：答案必須是 1～4`);
     if (!SOURCES.has(q.source)) errors.push(q.source === undefined ? `${tag}：沒有來源欄位` : `${tag}：來源欄位不認得（${q.source}）`);
     if (q.dupOf !== undefined && typeof q.dupOf !== 'string') errors.push(`${tag}：dupOf 格式不對`);
+    // 版本與考試範圍（只有分版的題庫有）：scope 只能是 outside（不在目前考試範圍內）；change 只能是新增／改過／刪除
+    if (q.version !== undefined && !/^\d{3}$/.test(String(q.version))) errors.push(`${tag}：版本格式不對`);
+    if (q.scope !== undefined && q.scope !== 'outside') errors.push(`${tag}：範圍只能是 outside 或不寫`);
+    if (q.change !== undefined && !CHANGES.has(q.change)) errors.push(`${tag}：差異類別不認得（${q.change}）`);
+    if (q.scope === 'outside' && !['modified', 'deleted'].includes(q.change)) errors.push(`${tag}：不在考試範圍的題要寫明是改過或刪除`);
+    if (q.newId !== undefined && typeof q.newId !== 'string') errors.push(`${tag}：newId 格式不對`);
   });
-  // dupOf 必須指到包內存在、而且本身不是重複的題
+  // dupOf 必須指到包內存在、而且本身不是重複的題；newId（舊版改過的題指到新版那題）也必須在包內、而且在考試範圍內
   const byId = new Map(qs.map(q => [q && q.id, q]));
+  qs.forEach(q => {
+    if (q && q.newId) {
+      const t = byId.get(q.newId);
+      if (!t) errors.push(`${q.id}：newId 指到不存在的題 ${q.newId}`);
+      else if (t.scope === 'outside') errors.push(`${q.id}：newId 指到的題本身不在考試範圍`);
+    }
+  });
   qs.forEach(q => {
     if (q && q.dupOf) {
       const t = byId.get(q.dupOf);
@@ -68,6 +82,11 @@ export function validateImportPack(obj, knownCerts) {
 }
 
 /** 練習時可出的題：不是重複題、沒有標 retired */
+/** 在不在目前的考試範圍（分版題庫裡，舊版已刪除或改過的題標 scope: 'outside'；其他題庫沒有這個欄位＝都在範圍內）。 */
+export function inScope(q) {
+  return q.scope !== 'outside';
+}
+
 export function isActive(q) {
   return !q.dupOf && q.status !== 'retired';
 }
@@ -100,6 +119,8 @@ export function shuffle(arr, rand) {
 export function pickQuestions(pool, opts, progress = new Map()) {
   const rand = rng(opts.seed ?? Date.now());
   let qs = pool.filter(isActive);
+  // 考試範圍：預設只出範圍內的題；要練範圍外（舊版已刪除或改過）的題要明講 scope: 'outside'，兩種不混在一起出
+  qs = opts.scope === 'outside' ? qs.filter(q => !inScope(q)) : qs.filter(inScope);
   if (opts.subject && opts.subject !== 'all') qs = qs.filter(q => q.subject === opts.subject);
   if (opts.source === 'official') qs = qs.filter(q => q.source === 'tabf-official');
   if (opts.source === 'user') qs = qs.filter(q => q.source === 'user-import');
@@ -139,8 +160,18 @@ export function summarize(attempts) {
  * 依正式題數出卷：只出可練的題、限定科目、隨機抽 count 題。
  * 題數不夠就不出（ok=false）——用不足的題數考，分數與及格判斷都沒有意義。
  */
-export function buildExam(pool, subject, count, seed) {
-  const qs = pool.filter(isActive).filter(q => q.subject === subject);
+export function buildExam(pool, subject, count, seed, mix) {
+  const base = pool.filter(isActive).filter(inScope);   // 模擬考只出考試範圍內的題
+  if (mix) {
+    // 依科目配額（例：金融市場常識 50＋職業道德 50）；照配額順序排，同一科目內隨機
+    const rand = rng(seed);
+    const parts = Object.entries(mix).map(([sub, n]) => ({ sub, n, qs: base.filter(q => q.subject === sub) }));
+    const short = parts.filter(p => p.qs.length < p.n);
+    const available = parts.reduce((t, p) => t + p.qs.length, 0);
+    if (short.length || Object.values(mix).reduce((a, b) => a + b, 0) !== count) return { ok: false, available, questions: [] };
+    return { ok: true, available, questions: parts.flatMap(p => shuffle(p.qs, rand).slice(0, p.n)) };
+  }
+  const qs = base.filter(q => q.subject === subject);
   if (qs.length < count) return { ok: false, available: qs.length, questions: [] };
   return { ok: true, available: qs.length, questions: shuffle(qs, rng(seed)).slice(0, count) };
 }
@@ -197,6 +228,11 @@ export function sourceLabel(q) {
   const law = q.law_as_of ? `（法規基準：${q.law_as_of}）` : '';
   const tail = where || law ? `・${where}${law}` : '';
   if (q.source === 'tabf-official') return `官方歷屆試題${tail}`;
+  if (q.source === 'sfi-official') {
+    const head = `證基會公告題庫${q.version ? ` ${q.version} 年版` : ''}${q.qno ? `・第 ${q.qno} 題` : ''}`;
+    if (q.scope === 'outside') return `${head}・不在 116 年考試範圍內（${q.change === 'deleted' ? '116 年版已刪除這題' : '116 年版已改過這題'}）`;
+    return `${head}${q.change === 'added' ? '・116 年版新增' : q.change === 'modified' ? '・116 年版改過' : ''}`;
+  }
   if (q.source === 'user-import') return `使用者提供的官方歷屆試題${tail}`;
   if (q.source && q.source.startsWith('original')) {
     const obj = q.objective ? `・官方大綱 ${q.objective}${q.skill ? `（第 ${q.skill} 細項）` : ''}` : '';

@@ -228,5 +228,53 @@ if (existsSync(real)) {
   check('持久保存：已經受保護時不再呼叫 persist()', fake.calls === 0, `呼叫了 ${fake.calls} 次`);
 }
 
+// 分版題庫（金融市場常識與職業道德）：考試範圍、去重、模擬考配額、出處標示
+{
+  const mk = (id, subject, extra = {}) => ({ id, cert: 'ethics', subject, type: 'single', stem: `題幹 ${id}`, options: ['甲', '乙', '丙', '丁'],
+    answer: 1, source: 'sfi-official', version: '116', qno: 1, ...extra });
+  const pool = [
+    mk('ethics-116-gen-001', 'gen'), mk('ethics-116-gen-002', 'gen', { change: 'added' }), mk('ethics-116-eth-001', 'eth', { change: 'modified' }),
+    mk('ethics-113-gen-001', 'gen', { version: '113', dupOf: 'ethics-116-gen-001' }),
+    mk('ethics-113-gen-009', 'gen', { version: '113', scope: 'outside', change: 'deleted' }),
+    mk('ethics-113-eth-007', 'eth', { version: '113', scope: 'outside', change: 'modified', newId: 'ethics-116-eth-001' }),
+  ];
+  const base = { format: 'certquiz-import', version: 1, cert: 'ethics' };
+  check('分版題庫：合法的匯入包通過', L.validateImportPack({ ...base, questions: pool }, ['ethics']).ok);
+  const bad = (desc, mut, want) => {
+    const qs = JSON.parse(JSON.stringify(pool)); mut(qs);
+    const r = L.validateImportPack({ ...base, questions: qs }, ['ethics']);
+    check(`分版題庫：${desc} → 擋`, !r.ok && r.errors.some(e => e.includes(want)), r.errors.join('；'));
+  };
+  bad('範圍寫成 outside 以外的值', qs => { qs[0].scope = 'old'; }, '範圍只能是 outside');
+  bad('不在範圍內卻沒寫是改過或刪除', qs => { delete qs[4].change; }, '要寫明是改過或刪除');
+  bad('差異類別不認得', qs => { qs[1].change = 'moved'; }, '差異類別不認得');
+  bad('newId 指到不存在的題', qs => { qs[5].newId = 'ethics-116-eth-999'; }, 'newId 指到不存在的題');
+  bad('newId 指到範圍外的題', qs => { qs[5].newId = 'ethics-113-gen-009'; }, 'newId 指到的題本身不在考試範圍');
+  const ids = list => list.map(x => x.id).sort().join();
+  check('分版題庫：預設只出考試範圍內的題（不出範圍外、不出去重掉的 113 版）',
+    ids(L.pickQuestions(pool, { count: 99, seed: 1 })) === 'ethics-116-eth-001,ethics-116-gen-001,ethics-116-gen-002');
+  check('分版題庫：指定範圍外，只出範圍外的題（兩種不混在一起）',
+    ids(L.pickQuestions(pool, { count: 99, seed: 1, scope: 'outside' })) === 'ethics-113-eth-007,ethics-113-gen-009');
+  const ex = L.buildExam(pool, 'all', 3, 1, { gen: 2, eth: 1 });
+  check('分版題庫：模擬考照配額（常識 2＋道德 1），只出範圍內、照配額順序排',
+    ex.ok && ex.questions.length === 3 && ex.questions.slice(0, 2).every(x => x.subject === 'gen') && ex.questions[2].subject === 'eth' && ex.questions.every(L.inScope));
+  check('分版題庫：某科題數不夠配額 → 不出卷', !L.buildExam(pool, 'all', 4, 1, { gen: 3, eth: 1 }).ok);
+  check('分版題庫：配額加總不等於題數 → 不出卷', !L.buildExam(pool, 'all', 5, 1, { gen: 2, eth: 1 }).ok);
+  const lab = id => L.sourceLabel(pool.find(x => x.id === id));
+  check('出處：116 年版新增', lab('ethics-116-gen-002') === '證基會公告題庫 116 年版・第 1 題・116 年版新增', lab('ethics-116-gen-002'));
+  check('出處：範圍外（已刪除）寫明不在 116 年考試範圍', lab('ethics-113-gen-009') === '證基會公告題庫 113 年版・第 1 題・不在 116 年考試範圍內（116 年版已刪除這題）', lab('ethics-113-gen-009'));
+  check('出處：範圍外（改過）寫明不在 116 年考試範圍', lab('ethics-113-eth-007') === '證基會公告題庫 113 年版・第 1 題・不在 116 年考試範圍內（116 年版已改過這題）', lab('ethics-113-eth-007'));
+  const realEthics = join(dirname(fileURLToPath(import.meta.url)), '..', 'data', 'local', 'import', 'ethics-匯入包.json');
+  if (existsSync(realEthics)) {
+    const r = L.validateImportPack(JSON.parse(readFileSync(realEthics, 'utf-8')), ['bic', 'az900', 'ethics']);
+    const inS = r.questions.filter(x => L.isActive(x) && L.inScope(x));
+    const out = r.questions.filter(x => L.isActive(x) && !L.inScope(x));
+    const e = L.buildExam(r.questions, 'all', 100, 7, { gen: 50, eth: 50 });
+    check(`真的金融常識與道德匯入包：通過檢查；考試範圍內 ${inS.length} 題全是 116 年版、範圍外 ${out.length} 題全是 113 年版；模擬考 100 題＝常識 50＋道德 50、全在範圍內`,
+      r.ok && inS.length === 1174 && inS.every(x => x.version === '116') && out.length === 128 && out.every(x => x.version === '113')
+      && e.ok && e.questions.filter(x => x.subject === 'gen').length === 50 && e.questions.every(x => L.inScope(x) && x.version === '116'), r.errors.slice(0, 3).join('；'));
+  }
+}
+
 console.log(fails ? `TEST-LOGIC FAILED：${fails} 項不符` : 'TEST-LOGIC OK：全部符合');
 process.exit(fails ? 1 : 0);

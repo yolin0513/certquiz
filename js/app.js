@@ -78,7 +78,12 @@ async function homeView(gen) {
         h('a', { class: 'btn', href: '#/settings', text: '去匯入題目' }));
     } else {
       body.push(
-        h('p', { class: 'stat' }, `可練 ${active.length} 題`, questions.length !== active.length ? `（另有重複題 ${questions.length - active.length} 題已隱藏）` : ''),
+        (() => {   // 分版題庫：考試範圍內與範圍外分開寫，不讓範圍外的題算進「可練」
+          const out = active.filter(x => !L.inScope(x)).length;
+          const dup = questions.length - active.length ? `（重複題 ${questions.length - active.length} 題已隱藏）` : '';
+          return out ? h('p', { class: 'stat' }, `考試範圍內 ${active.length - out} 題；另有不在範圍內的 ${out} 題，要另外選才會出${dup}`)
+            : h('p', { class: 'stat' }, `可練 ${active.length} 題`, dup ? `（另有${dup.slice(1)}` : '');
+        })(),
         h('p', { class: 'stat' }, `已作答 ${s.answered} 次，答對率 ${s.answered ? pct(s.rate) : '—'}，錯題 ${mistakes.length} 題`),
         // 按鈕一律兩欄等寬的格子、順序固定（讀書、練習、錯題、統計，再接模擬考），兩張卡片才排得齊
         h('div', { class: 'actions' },
@@ -87,7 +92,8 @@ async function homeView(gen) {
           h('a', { class: 'btn', href: `#/practice?cert=${c.id}&mode=mistakes&count=20`, 'aria-disabled': mistakes.length ? null : 'true', text: `錯題複習 ${mistakes.length}` }),
           h('a', { class: 'btn', href: `#/stats?cert=${c.id}`, text: '統計' }),
           c.subjects.filter(s => s.exam).map(s => h('a', { class: 'btn', href: `#/exam?cert=${c.id}&subject=${s.id}`,
-            text: `模擬考：${s.short || s.name}` }))));
+            text: `模擬考：${s.short || s.name}` })),
+          c.exam ? h('a', { class: 'btn', href: `#/exam?cert=${c.id}&subject=all`, text: `模擬考：${c.exam.name}` }) : null));
     }
     cards.push(h('section', { class: 'card' }, h('h2', { text: c.name }), h('p', { class: 'notice', text: c.notice }), ...body));
   }
@@ -97,16 +103,20 @@ async function homeView(gen) {
 // ---------------------------------------------------------------- 練習設定
 async function setupView(gen, q) {
   const certId = q.get('cert');
-  const { cert } = await loadPool(certId);
+  const { cert, questions } = await loadPool(certId);
   const subjects = [{ id: 'all', name: '全部科目' }, ...cert.subjects];
+  const hasOutside = questions.some(x => x.scope === 'outside');
   const form = h('form', { class: 'card', onsubmit: e => {
     e.preventDefault();
     const f = new FormData(e.target);
-    go(`#/practice?cert=${certId}&mode=practice&subject=${f.get('subject')}&source=${f.get('source')}&count=${f.get('count')}&order=${f.get('order')}`);
+    go(`#/practice?cert=${certId}&mode=practice&subject=${f.get('subject')}&source=${f.get('source')}&count=${f.get('count')}&order=${f.get('order')}${f.get('scope') === 'outside' ? '&scope=outside' : ''}`);
   } },
   h('h2', { text: cert.short }),
   h('label', { text: '科目' }), h('select', { name: 'subject' }, subjects.map(s => h('option', { value: s.id, text: s.name }))),
-  cert.questionSource === 'import' ? [h('label', { text: '來源' }), h('select', { name: 'source' },
+  hasOutside ? [h('label', { text: '題目範圍' }), h('select', { name: 'scope', id: 'scope' },
+    h('option', { value: '', text: '116 年版（考試範圍）' }),
+    h('option', { value: 'outside', text: '113 年版裡已刪除或改過的題（不在 116 年考試範圍內）' }))] : null,
+  cert.sourceFilter ? [h('label', { text: '來源' }), h('select', { name: 'source' },
     h('option', { value: 'all', text: '全部' }), h('option', { value: 'official', text: '只出從官網下載的' }),
     h('option', { value: 'user', text: '只出我自己提供的' }))] : h('input', { type: 'hidden', name: 'source', value: 'all' }),
   h('label', { text: '題數' }), h('select', { name: 'count' }, [10, 20, 50].map(n => h('option', { value: n, text: `${n} 題` }))),
@@ -129,7 +139,7 @@ async function practiceView(gen, q) {
     const prog = new Map((await DB.getAll('progress', certId)).map(p => [p.qid, p]));
     picked = L.pickQuestions(questions, { subject: q.get('subject') || 'all', source: q.get('source') || 'all',
       count: Number(q.get('count')) || 10, order: q.get('order') || 'unseen',
-      objective: q.get('objective') || '', skill: q.get('skill') || '', period: q.get('period') || '',
+      objective: q.get('objective') || '', skill: q.get('skill') || '', period: q.get('period') || '', scope: q.get('scope') || '',
       ids: q.get('set') === 'points' ? new Set(L.pointList(await DB.getMeta(`points:${certId}`, []), questions).map(x => x.rep.id)) : null }, prog);
   }
   if (!picked.length) {
@@ -174,6 +184,7 @@ async function practiceView(gen, q) {
       h('div', { class: 'bar' }, h('a', { class: 'back', href: '#/', text: '← 結束' }), h('span', { text: `${i + 1} / ${picked.length}` })),
       h('section', { class: 'card q' },
         item.source && item.source.startsWith('original') ? h('p', { class: 'src', text: L.sourceLabel(item) }) : null,
+        item.scope === 'outside' ? h('p', { class: 'ng scope-out', text: `不在 116 年考試範圍內：${item.change === 'deleted' ? '116 年版已刪除這題' : '116 年版已改過這題'}。練這題可能學到過時的內容。` }) : null,
         h('p', { class: 'stem', text: item.stem }), h('div', { class: 'opts' }, opts), feedback, next));
   };
 
@@ -203,10 +214,10 @@ async function examView(gen, q) {
   const subjectId = q.get('subject');
   const { cert, questions } = await loadPool(certId);
   const studiedMap = await DB.getMeta('studied', {});
-  const subject = cert.subjects.find(s => s.id === subjectId);
+  const subject = subjectId === 'all' && cert.exam ? { id: 'all', name: cert.exam.name, exam: cert.exam } : cert.subjects.find(s => s.id === subjectId);
   if (!subject || !subject.exam) { render(gen, h('p', { text: '這個科目沒有模擬考設定。' })); return; }
   const ex = subject.exam;
-  const built = L.buildExam(questions, subjectId, ex.count, Date.now());
+  const built = L.buildExam(questions, subjectId, ex.count, Date.now(), ex.mix);
   const back = h('a', { class: 'back', href: '#/', text: '← 回首頁' });
   if (!built.ok) {
     render(gen, back, h('section', { class: 'card' }, h('h2', { text: `模擬考：${subject.name}` }),
@@ -328,7 +339,8 @@ async function studyView(gen, q) {
   const { cert, questions } = await loadPool(certId);
   const back = h('a', { class: 'back', href: '#/', text: '← 回首頁' });
   if (!cert.syllabus) {
-    await importStudyView(gen, q, cert, questions);
+    if (questions.some(x => x.version)) await versionedStudyView(gen, q, cert, questions);
+    else await importStudyView(gen, q, cert, questions);
     return;
   }
   const g = L.studyGroups(cert.syllabus, questions);
@@ -471,6 +483,47 @@ async function importStudyView(gen, q, cert, questions) {
       h('p', { class: 'src', text: L.sourceLabel(x) }))));
 }
 
+// 分版題庫（金融市場常識與職業道德）的讀書頁：116 年版依科目逐題列；113 年版裡不在考試範圍的題另外一頁，標明為什麼不在範圍。
+// 只列題目與官方正解，不寫自己的解析（docs/L）。
+async function versionedStudyView(gen, q, cert, questions) {
+  const PAGE = 50;
+  const view = ['outside', ...cert.subjects.map(s => s.id)].includes(q.get('view')) ? q.get('view') : cert.subjects[0].id;
+  const page = Math.max(1, Number(q.get('page')) || 1);
+  const active = questions.filter(L.isActive);
+  const byId = new Map(questions.map(x => [x.id, x]));
+  const inScope = id => active.filter(x => L.inScope(x) && x.subject === id);
+  const outside = active.filter(x => !L.inScope(x));
+  const tab = (v, text) => h('a', { class: view === v ? 'btn primary' : 'btn', href: `#/study?cert=${cert.id}&view=${v}`, text });
+  const opts = x => h('ol', { class: 'study-opts' }, x.options.map((t, k) => h('li', { class: k + 1 === x.answer ? 'right' : null },
+    h('span', { text: t }), k + 1 === x.answer ? h('b', { text: '（正解）' }) : null)));
+  const list = view === 'outside' ? outside.slice().sort((a, b) => a.subject.localeCompare(b.subject) || a.qno - b.qno)
+    : inScope(view).sort((a, b) => a.qno - b.qno);
+  const pages = Math.max(1, Math.ceil(list.length / PAGE));
+  const shown = list.slice((page - 1) * PAGE, page * PAGE);
+  const subjName = new Map(cert.subjects.map(s => [s.id, s.name]));
+  const pager = pages > 1 ? h('div', { class: 'row' }, Array.from({ length: pages }, (_, k) => h('a', {
+    class: k + 1 === page ? 'btn primary' : 'btn', href: `#/study?cert=${cert.id}&view=${view}&page=${k + 1}`, text: `${k * PAGE + 1}～${Math.min((k + 1) * PAGE, list.length)}` }))) : null;
+  const head = view === 'outside'
+    ? h('section', { class: 'card warn', id: 'scope-note' }, h('h3', { text: `不在 116 年考試範圍內（113 年版，${outside.length} 題）` }),
+      h('p', { text: '這些是 113 年版題庫裡、116 年版已經刪除或改過的題。116 年版從 2027 年 1 月 1 日起適用，這些題不會出現在你的考試裡。' }),
+      h('p', { text: '改過的題，下面同時列出 116 年版的寫法與正解；背 116 年版的那一個。' }))
+    : h('section', { class: 'card', id: 'scope-note' }, h('h2', { text: `116 年版・${subjName.get(view)}（${list.length} 題）` }),
+      h('p', { class: 'muted', text: '116 年版是考試範圍（2027 年 1 月 1 日起適用）。題目與正解照證基會公告題庫，這裡不寫解析。' }),
+      h('div', { class: 'row' }, h('a', { class: 'btn primary', href: `#/practice?cert=${cert.id}&mode=practice&subject=${view}&count=50&order=unseen`, text: '練這一科（50 題）' })));
+  render(gen, h('a', { class: 'back', href: '#/', text: '← 回首頁' }),
+    h('div', { class: 'row' }, cert.subjects.map(s => tab(s.id, `116 年版・${s.name}（${inScope(s.id).length}）`)), tab('outside', `不在考試範圍（${outside.length}）`)),
+    head, pager,
+    shown.map(x => {
+      const nw = x.newId ? byId.get(x.newId) : null;
+      return h('section', { class: 'card study-q' },
+        h('p', { class: 'src', text: `${subjName.get(x.subject)}・${L.sourceLabel(x)}` }),
+        h('p', { class: 'stem', text: x.stem }), opts(x),
+        nw ? h('div', { class: 'variant' }, h('p', { class: 'muted', text: `116 年版的這題（第 ${nw.qno} 題）：` }),
+          h('p', { class: 'stem', text: nw.stem }), h('p', { class: 'ok', text: `正解：(${nw.answer}) ${nw.options[nw.answer - 1]}` })) : null);
+    }),
+    pager);
+}
+
 // ---------------------------------------------------------------- 統計
 async function statsView(gen, q) {
   const certId = q.get('cert');
@@ -479,7 +532,7 @@ async function statsView(gen, q) {
   const attempts = await DB.getAll('attempts', certId);
   const mistakes = await DB.getAll('mistakes', certId);
   const s = L.summarize(attempts);
-  const subjName = new Map(cert.subjects.map(x => [x.id, x.name]));
+  const subjName = new Map([...cert.subjects.map(x => [x.id, x.name]), ...(cert.exam ? [['all', cert.exam.name]] : [])]);
   const srcName = { 'tabf-official': '官網下載的', 'user-import': '我自己提供的', 'original-ai': '原創題', 'original-human': '原創題' };
   const table = (title, m, name) => h('section', { class: 'card' }, h('h3', { text: title }),
     m.size ? h('table', {}, h('tr', {}, h('th', { text: '' }), h('th', { text: '作答' }), h('th', { text: '答對率' })),
@@ -541,15 +594,17 @@ async function settingsView(gen) {
       return;
     }
     const active = r.questions.filter(L.isActive).length;
+    const outN = r.questions.filter(x => L.isActive(x) && !L.inScope(x)).length;
+    const activeText = outN ? `考試範圍內 ${active - outN} 題，另有不在範圍內的 ${outN} 題` : `可練 ${active} 題`;
     const cert = m.certs.find(c => c.id === r.cert);
     const confirmBtn = h('button', { class: 'btn primary', type: 'button', text: '確定匯入', onclick: async () => {
       confirmBtn.disabled = true;
       const res = await DB.replaceUserQuestions(r.cert, r.questions);
       await DB.setMeta(`points:${r.cert}`, r.points || []);   // 考點清單跟著匯入包走；舊版匯入包沒有考點就清成空的
-      fill(status, h('p', { class: 'ok', text: `匯入完成：${cert.short} ${res.added} 題（可練 ${active} 題）。原本的 ${res.removed} 題已換成這一份；作答紀錄保留。` }),
+      fill(status, h('p', { class: 'ok', text: `匯入完成：${cert.short} ${res.added} 題（${activeText}）。原本的 ${res.removed} 題已換成這一份；作答紀錄保留。` }),
         h('a', { class: 'btn', href: '#/', text: '回首頁開始練習' }));
     } });
-    fill(status, h('p', { text: `${cert.short}：${r.questions.length} 題，去掉重複後可練 ${active} 題。` }),
+    fill(status, h('p', { text: `${cert.short}：${r.questions.length} 題，去掉重複後${activeText}。` }),
       h('p', { class: 'muted', text: '匯入會換掉這張證照先前匯入的題目（同一題的作答紀錄會保留）。' }), confirmBtn);
   });
   render(gen, h('a', { class: 'back', href: '#/', text: '← 回首頁' }),

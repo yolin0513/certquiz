@@ -899,6 +899,7 @@ async function lookTest(browser, base, shotDir) {
     check(`驗尺：對比公式對已知值（#767676／白 ${rr[0].toFixed(2)}、#777777／白 ${rr[1].toFixed(2)}、黑／白 ${rr[2].toFixed(2)}）`, rulerOk);
     if (!rulerOk) return;
     await importPack(page, PACK, pack.counts.active);
+    if (existsSync(ETHICS_PACK)) await importEthics(page);
     // 練幾題，讓錯題、統計都有內容；讀一個細項，讓「已讀」有東西可標
     await gotoView(page, base + '#/practice?cert=bic&mode=practice&count=3');
     for (let n = 0; n < 3; n++) { await page.waitForSelector('.opt:not([disabled])'); await page.click('.opt[data-k="1"]'); await page.waitForSelector('.feedback:not([hidden])'); await page.click('.q .btn.primary'); }
@@ -918,6 +919,8 @@ async function lookTest(browser, base, shotDir) {
       ['模擬考作答中', '#/exam?cert=bic&subject=law', 'button', async () => { await (await page.waitForSelector('button::-p-text(開始考試)')).click(); await page.waitForSelector('.grid .cell'); await page.click('.opt[data-k="1"]'); }],
       ['統計', '#/stats?cert=bic', 'table'],
       ['設定', '#/settings', 'input[type=file]'],
+      ['金融常識與道德：讀書（範圍外）', '#/study?cert=ethics&view=outside', '#scope-note'],
+      ['金融常識與道德：練範圍外的題', '#/practice?cert=ethics&mode=practice&scope=outside&count=2', '.q .stem'],
     ];
     const pop = {}, shots = [];
     for (const scheme of ['dark', 'light']) {
@@ -967,20 +970,23 @@ async function lookTest(browser, base, shotDir) {
       await page.waitForSelector('.actions');
       const g = await homeGrid(page);
       const flat = g.flatMap(c => c.w), hs = g.flatMap(c => c.h);
-      const ok = g.length === 2 && g.every(c => c.x.length === 2) && JSON.stringify(g[0].x) === JSON.stringify(g[1].x)
+      // 卡片數＝有按鈕的證照數（2026-10-12 加了第三張證照；原本寫死「兩張」）
+      const ok = g.length >= 2 && g.every(c => c.x.length === 2) && g.every(c => JSON.stringify(c.x) === JSON.stringify(g[0].x))
         && Math.max(...flat) - Math.min(...flat) <= 1 && Math.max(...hs) - Math.min(...hs) <= 1;
-      check(`首頁 ${w}px：兩張卡片的按鈕都排成兩欄、全部等寬（${Math.min(...flat)}～${Math.max(...flat)}px）、等高（${Math.min(...hs)}～${Math.max(...hs)}px），欄位置對齊`,
+      check(`首頁 ${w}px：${g.length} 張卡片的按鈕都排成兩欄、全部等寬（${Math.min(...flat)}～${Math.max(...flat)}px）、等高（${Math.min(...hs)}～${Math.max(...hs)}px），欄位置對齊`,
         ok, JSON.stringify(g));
       const wide = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
       check(`首頁 ${w}px：沒有橫向捲動`, wide <= 1, `超出 ${wide}px`);
     }
     const order = await page.$$eval('#view .card .actions', as => as.map(a => [...a.querySelectorAll('.btn')].map(b => b.textContent.replace(/ \d+$/, ''))));
-    check(`首頁：兩張卡片前四個按鈕順序相同（${order[0] ? order[0].slice(0, 4).join('、') : ''}）`,
-      order.length === 2 && JSON.stringify(order[0].slice(0, 4)) === JSON.stringify(order[1].slice(0, 4)), JSON.stringify(order));
+    check(`首頁：${order.length} 張卡片前四個按鈕順序相同（${order[0] ? order[0].slice(0, 4).join('、') : ''}）`,
+      order.length >= 2 && order.every(o => JSON.stringify(o.slice(0, 4)) === JSON.stringify(order[0].slice(0, 4))), JSON.stringify(order));
+    const bicOrder = await page.$$eval('#view .card', cs => { const c = cs.find(x => x.querySelector('a[href*="cert=bic&mode=mistakes"]'));
+      return c ? [...c.querySelectorAll('.actions .btn')].map(b => b.textContent.replace(/ \d+$/, '')) : []; });
     const mk = await page.$eval('#view .card .actions a[href*="cert=bic&mode=mistakes"]', b => b.textContent);
     check(`首頁：錯題數三位數（${mk}）時，上面兩種寬度量到的按鈕仍是一行、等高`, /^錯題複習 1\d\d$/.test(mk), mk);
     check('首頁：模擬考按鈕寫科目名，沒有括號（「模擬考：法規」「模擬考：實務」）',
-      order.length === 2 && JSON.stringify(order[0].slice(4)) === JSON.stringify(['模擬考：法規', '模擬考：實務']), JSON.stringify(order[0]));
+      JSON.stringify(bicOrder.slice(4)) === JSON.stringify(['模擬考：法規', '模擬考：實務']), JSON.stringify(bicOrder));
     // 大綱目錄：讀過的細項用文字標「已讀」，不靠連結顏色
     await gotoView(page, base + '?r=' + Date.now() + '#/study?cert=az900');
     await page.waitForSelector('.item');
@@ -1026,6 +1032,89 @@ async function persistTest(browser, base) {
     } finally {
       await ctx.close();
     }
+  }
+}
+
+// ---------------------------------------------------------------- 二之十、金融市場常識與職業道德：考試範圍（116 年版）與範圍外（113 年版刪除／改過）分開
+const ETHICS_PACK = join(ROOT, 'data', 'local', 'import', 'ethics-匯入包.json');
+async function importEthics(page) {
+  await gotoView(page, page.url().split('#')[0] + '#/settings');
+  const input = await page.waitForSelector('input[type=file]');
+  await input.uploadFile(ETHICS_PACK);
+  await waitText(page, '考試範圍內 1174 題，另有不在範圍內的 128 題');
+  await page.click('button::-p-text(確定匯入)');
+  await waitText(page, '匯入完成');
+}
+async function ethicsTest(browser, base) {
+  console.log('== 二之十、金融市場常識與職業道德：預設只出 116 年版（考試範圍）；113 年版刪除／改過的題另外選、標「不在 116 年考試範圍內」');
+  if (!existsSync(ETHICS_PACK)) { check('金融常識與道德：本機有匯入包（先跑 import_sfi → ethics_diff → build_ethics_pack）', false); return; }
+  const pack = JSON.parse(readFileSync(ETHICS_PACK, 'utf-8'));
+  const act = pack.questions.filter(x => !x.dupOf);
+  const inStem = new Map(act.filter(x => x.scope !== 'outside').map(x => [x.stem, x]));
+  const outStem = new Map(act.filter(x => x.scope === 'outside').map(x => [x.stem, x]));
+  const ctx = await browser.createBrowserContext();
+  const errors = [];
+  try {
+    const page = await newPage(ctx, errors);
+    await gotoView(page, base);
+    await waitText(page, '證照題庫練習');
+    await importEthics(page);
+    await gotoView(page, base + '#/');
+    await waitText(page, '金融市場常識與職業道德');
+    const home = await text(page);
+    check('首頁：考試範圍內與範圍外分開寫（不把範圍外算進可練），有「模擬考：全科」',
+      home.includes('考試範圍內 1174 題；另有不在範圍內的 128 題') && !home.includes('可練 1302') && !!(await page.$('a.btn::-p-text(模擬考：全科)')), home.slice(0, 300));
+    await gotoView(page, base + '#/setup?cert=ethics');
+    const sel = await page.waitForSelector('#scope');
+    const scopeOpts = await sel.evaluate(s => [s.value, [...s.options].map(o => o.textContent)]);
+    check('練習設定：「題目範圍」預設 116 年版（考試範圍），另一個選項寫明不在 116 年考試範圍內',
+      scopeOpts[0] === '' && scopeOpts[1][0].includes('116 年版（考試範圍）') && scopeOpts[1][1].includes('不在 116 年考試範圍內'), JSON.stringify(scopeOpts));
+    // 預設練習：20 題全是 116 年版，沒有範圍外警示
+    const walk = async (n, wantWarn) => {
+      const got = [];
+      for (let k = 0; k < n; k++) {
+        await page.waitForSelector('.opt:not([disabled])');
+        got.push({ stem: await page.$eval('.q .stem', e => e.textContent), warn: !!(await page.$('.scope-out')) });
+        await page.click('.opt[data-k="1"]');
+        await page.waitForSelector('.feedback:not([hidden])');
+        await page.click('.q .btn.primary');
+      }
+      return got;
+    };
+    await gotoView(page, base + '#/practice?cert=ethics&mode=practice&count=20&order=random');
+    const d = await walk(20, false);
+    check('預設練習 20 題：全部是 116 年版（考試範圍）、沒有一題顯示範圍外警示',
+      d.every(x => inStem.has(x.stem) && inStem.get(x.stem).version === '116' && !x.warn), JSON.stringify(d.filter(x => !inStem.has(x.stem) || x.warn).slice(0, 2)));
+    await gotoView(page, base + '#/practice?cert=ethics&mode=practice&scope=outside&count=10&order=random');
+    const o = await walk(10, true);
+    check('選「範圍外」練 10 題：全部是 113 年版刪除或改過的題，每一題作答前就顯示「不在 116 年考試範圍內」',
+      o.every(x => outStem.has(x.stem) && x.warn), JSON.stringify(o.filter(x => !outStem.has(x.stem) || !x.warn).slice(0, 2)));
+    // 模擬考：100 題＝常識 50＋道德 50，全在考試範圍內
+    await gotoView(page, base + '#/exam?cert=ethics&subject=all');
+    await (await page.waitForSelector('button::-p-text(開始考試)')).click();
+    await page.waitForSelector('.grid .cell');
+    const cells = await page.$$('.grid .cell');
+    const s1 = await page.$eval('.q .stem', e => e.textContent);
+    await cells[50].click();
+    await page.waitForFunction(t => document.querySelector('.q .stem') && document.querySelector('.q .stem').textContent !== t, {}, s1);
+    const s51 = await page.$eval('.q .stem', e => e.textContent);
+    check(`模擬考：${cells.length} 題；第 1 題是 116 年版常識、第 51 題是 116 年版道德（配額常識 50＋道德 50）`,
+      cells.length === 100 && inStem.get(s1)?.subject === 'gen' && inStem.get(s51)?.subject === 'eth', `${s1.slice(0, 20)}｜${s51.slice(0, 20)}`);
+    // 讀書頁：兩科在範圍內、範圍外另一頁
+    await gotoView(page, base + '#/study?cert=ethics');
+    await page.waitForSelector('.study-q');
+    const tabs = await page.$$eval('#view .row a.btn', as => as.map(a => a.textContent));
+    check('讀書頁：分頁是 116 年版常識（558）／116 年版道德（616）／不在考試範圍（128）',
+      tabs.includes('116 年版・金融市場常識（558）') && tabs.includes('116 年版・職業道德（616）') && tabs.includes('不在考試範圍（128）'), JSON.stringify(tabs));
+    await gotoView(page, base + '#/study?cert=ethics&view=outside');
+    await page.waitForSelector('#scope-note.warn');
+    const outCards = await page.$$eval('.study-q', cs => cs.map(c => ({ src: c.querySelector('.src').textContent, nw: !!c.querySelector('.variant') })));
+    check(`讀書頁（範圍外）：有警示卡；這一頁 ${outCards.length} 張卡全部標「不在 116 年考試範圍內」，改過的題附 116 年版的寫法（${outCards.filter(c => c.nw).length} 張）`,
+      outCards.length === 50 && outCards.every(c => c.src.includes('不在 116 年考試範圍內')) && outCards.some(c => c.nw)
+      && outCards.filter(c => c.nw).every(c => c.src.includes('已改過')), JSON.stringify(outCards.slice(0, 2)));
+    check('金融常識與道德：沒有頁面錯誤', errors.length === 0, errors.join('；'));
+  } finally {
+    await ctx.close();
   }
 }
 
@@ -1190,6 +1279,7 @@ async function main() {
     await importStudyTest(browser, base);
     await lookTest(browser, base, process.env.CERTQUIZ_SHOTS || '');
     await persistTest(browser, base);
+    await ethicsTest(browser, base);
     await missingBankTest(browser);
     check(`全畫面掃描：整個測試期間所有頁面都沒有出現 null／undefined／NaN`, BAD_TEXT.length === 0,
       BAD_TEXT.slice(0, 8).map(x => `「${x.t}」@${x.where}`).join('；'));
