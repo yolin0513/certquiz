@@ -43,14 +43,26 @@ def iso(d):
 
 
 def pending_text(pcode):
-    """全國法規資料庫現行條文頁的「生效狀態」：有條文尚未施行時，回傳頁面上那一句（例：第 44～47 條施行日期由主管機關定）。"""
+    """全國法規資料庫現行條文頁「生效狀態」那一格：有條文尚未施行時，回傳那一格的原文。
+    那一格在網頁上是兩段（<p> 與 <div>）：照網頁順序、一段一行，每段原樣保留，只去掉排版縮排、把不換行空格（&nbsp;）換成一般空格。
+    不拼接、不改字、不刪標點（2026-10-12：第一版用正規式抓兩個片段再用「；」接起來，標成原文，其實不是；常設規則 21）。
+    每段都要能在原始網頁裡原樣找到（把 &nbsp; 換回去比對），找不到就當作沒抓到。"""
     p = LAW / "raw" / f"all-{pcode}.html"
     if not p.exists():
         return None
-    t = re.sub(r"\s+", " ", re.sub(r"&nbsp;", " ", re.sub(r"<[^>]+>", " ", p.read_text(encoding="utf-8"))))
-    # 原文照抄網頁上連續的那一段（只把排版的換行與標籤換成一個空格），不拼接、不改字：畫面上會標成「原文」
-    m = re.search(r"生效狀態[：:]\s*※(本法規部分或全部條文尚未生效.*?施行日期[^。]*?定)", t)
-    return m.group(1).strip() if m else None
+    raw = p.read_text(encoding="utf-8")
+    m = re.search(r'<tr id="VaildState">.*?<td[^>]*>(.*?)</td>', raw, re.S)
+    if not m or "尚未生效" not in m.group(1):
+        return None
+    blocks = []
+    for b in re.findall(r"<(p|div)[^>]*>(.*?)</\1>", m.group(1), re.S):
+        t = re.sub(r"<br\s*/?>", "", b[1]).strip()
+        if not t:
+            continue
+        if re.search(r"<[^>]+>", t) or t not in raw:   # 段落裡還有別的標籤、或在原始網頁找不到原樣 → 不收
+            return None
+        blocks.append(t.replace("&nbsp;", " "))
+    return "\n".join(blocks) if blocks else None
 
 
 def law_table():
@@ -74,7 +86,9 @@ def ruler(T):
     銀行法的現行頁不該被讀出尚未施行；沒有任何一個日期晚於今天。"""
     today = datetime.now().strftime("%Y%m%d")
     ic = T.get("金融控股公司及銀行業內部控制及稽核制度實施辦法", {})
-    ok1 = {"20210923", "20260506"} <= set(ic.get("dates", [])) and bool(ic.get("pending")) and "44" in (ic.get("pending") or "")
+    # 尚未施行的原文：已知值是 2026-10-08 抓下的那一頁、人工逐字讀過（兩段、照網頁順序）
+    want = "\n".join(["※本法規部分或全部條文尚未生效，最後生效日期：未定", "一百十五年五月六日修正發布第 44～47 條條文，施行日期由主管機關定。"])
+    ok1 = {"20210923", "20260506"} <= set(ic.get("dates", [])) and ic.get("pending") == want
     ok2 = "銀行法" in T and T["銀行法"]["pending"] is None
     late = sorted({d for v in T.values() for d in v["dates"] if d > today})
     print(f"  驗尺：內控辦法版本含 2021-09-23、2026-05-06 且讀到尚未施行（{ic.get('pending')}）→ {'✓' if ok1 else '✗'}；"

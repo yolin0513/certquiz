@@ -28,6 +28,7 @@ basis_section（章節標題）、basis_hash（原文正規化後的 sha256）�
 """
 import hashlib
 import html
+import json
 import re
 import sys
 import urllib.error
@@ -222,12 +223,40 @@ def fill(paths):
     return 0
 
 
+def syllabus():
+    """--syllabus：App 寫「細項名稱是官方原文」，這裡實際核對（2026-10-12，常設規則 21）。
+    抓 certs.json 記的 study guide 網址，每一個領域、節次名稱、細項都要是頁面可見文字裡的連續子字串（只做空白正規化）。
+    驗尺兩個方向：版本字串一定要找得到；編造的一句一定找不到。"""
+    certs = json.loads((ROOT / "data" / "src" / "certs.json").read_text(encoding="utf-8"))
+    certs = certs.get("certs", certs) if isinstance(certs, dict) else certs
+    syl = next(c for c in certs if c["id"] == "az900")["syllabus"]
+    text = page_text(fetch(syl["source"]))
+    ok_pos = norm(syl["version"]) in text
+    ok_neg = "Describe the lunar landing program" not in text
+    print(f"  驗尺：版本字串「{syl['version']}」{'找得到 ✓' if ok_pos else '找不到 ✗'}；編造的一句{'找不到 ✓' if ok_neg else '竟然找得到 ✗'}")
+    if not (ok_pos and ok_neg):
+        print("VERIFY-SYLLABUS ABORT：驗尺失敗，不能下結論")
+        return 2
+    items = []
+    for o in syl["objectives"]:
+        items += [("領域", o["domain"]), (f"節次 {o['id']}", o["name"])] + [(f"{o['id']} 細項 {i}", s) for i, s in enumerate(o["skills"], 1)]
+    items = list(dict.fromkeys(items))
+    miss = [(k, v) for k, v in items if norm(v) not in text]
+    for k, v in miss:
+        print(f"  ✗ {k}：{v[:80]}")
+    n = len(items)
+    print(f"VERIFY-SYLLABUS {'OK' if not miss else 'FAILED'}：{n - len(miss)}／{n} 個（領域、節次名稱、細項）在官方 study guide 頁上逐字找得到（連續子字串）")
+    return 0 if not miss else 1
+
+
 def main(argv):
     if not argv:
         print(__doc__)
         return 2
     if argv[0] == "--fill":
         return fill(argv[1:])
+    if argv[0] == "--syllabus":
+        return syllabus()
     paths = RECHECK_DIRS if argv[0] == "--recheck" else argv
     qs, expected = collect(paths)
     if not qs:

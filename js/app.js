@@ -542,7 +542,7 @@ function pendingShort(text) {
 function pendingNote(text) {
   return [h('span', { text: pendingShort(text) }), h('span', { class: 'muted', text: '（改寫）' }),
     h('details', { class: 'law-orig' }, h('summary', { text: '看法規資料庫原文' }),
-      h('p', { class: 'muted', text: '全國法規資料庫「生效狀態」原文（只把網頁排版的換行換成空格）：' }),
+      h('p', { class: 'muted', text: '全國法規資料庫「生效狀態」這一格的原文：網頁上是兩段，照順序一段一行；只去掉排版縮排、把不換行空格換成一般空格，沒有改字。' }),
       h('blockquote', { text: text }))];
 }
 
