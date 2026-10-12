@@ -370,7 +370,9 @@ async function realTest(browser, base, mon) {
   await page.waitForSelector('.card.q .stem');
   const azBefore = await page.$eval('.card.q', e => e.innerText);
   check('AZ-900：作答前標「原創練習題，不是考題」＋官方大綱節次與細項', /原創練習題，不是考題・官方大綱 [ABC]\.\d（第 \d 細項）/.test(azBefore), azBefore.slice(0, 120));
-  check('AZ-900：作答前不顯示依據', !azBefore.includes('依據'), azBefore.slice(0, 200));
+  // 看的是「依據那一行」（.basis、learn.microsoft.com 網址），不是「依據」兩個字：有一題（az900-b4-002）題目本身就有這兩個字，抽到就誤判（2026-10-12）
+  const azBasisBefore = await page.$$eval('.card.q .basis', es => es.filter(e => e.offsetParent !== null).length);
+  check('AZ-900：作答前不顯示依據', azBasisBefore === 0 && !azBefore.includes('learn.microsoft.com'), azBefore.slice(0, 200));
   await page.click('.opt[data-k="1"]');
   await page.waitForSelector('.feedback:not([hidden])');
   const azStem = await page.$eval('.stem', e => e.textContent);
@@ -1176,7 +1178,7 @@ async function doubtTest(browser, base) {
     check('標記：作答後按「標記：答案有疑問」→ 按鈕變成「已標記」（文字和外框都變）', on.includes('已標記') && await page.$eval('.feedback .btn.doubt', e => e.classList.contains('on')));
     await gotoView(page, base + '#/stats?cert=bic');
     const link = await page.waitForSelector('#doubts-link').then(e => e.evaluate(x => x.innerText)).catch(() => '');
-    check('標記：統計頁寫「你標了 1 題」並有連結', link.includes('你標了 1 題') && link.includes('看這 1 題'), link);
+    check('標記：統計頁寫「你標了 1 題」並有連結', link.includes('你標了 1 題') && link.includes('看標記的題（1）'), link);
     await gotoView(page, base + '#/doubts?cert=bic');
     await page.waitForSelector('.doubt-item');
     const items = await page.$$eval('.doubt-item', cs => cs.map(c => ({ stem: c.querySelector('.stem').textContent, right: c.querySelector('li.right')?.textContent || '', law: !!c.querySelector('.law-note') })));
@@ -1189,6 +1191,16 @@ async function doubtTest(browser, base) {
     await gotoView(page, base + '#/stats?cert=bic');
     const after = await page.waitForSelector('#doubts-link').then(e => e.evaluate(x => x.innerText)).catch(() => '');
     check('標記：在清單裡再按一次取消 → 統計頁回到「還沒有標記」', after.includes('還沒有標記') && errors.length === 0, after + errors.join('；'));
+    // 用過一陣子的狀態：標過的題重新匯入後都不在題庫了 → 統計頁的入口仍在、清單頁說明哪些題號不在了（入口不能依附在會消失的東西上）
+    await page.evaluate(() => new Promise(r => { const q = indexedDB.open('certquiz'); q.onsuccess = () => {
+      const tx = q.result.transaction('meta', 'readwrite'); tx.objectStore('meta').put({ k: 'doubts', v: { 'bic-law-t30-001': { cert: 'bic', ts: 1 } } }); tx.oncomplete = r; }; }));
+    await gotoView(page, base + '#/');
+    await gotoView(page, base + '#/stats?cert=bic');
+    const gone = await page.waitForSelector('#doubts-link').then(e => e.evaluate(x => x.innerText)).catch(() => '');
+    await (await page.waitForSelector('#doubts-link a.btn').catch(() => null))?.click();
+    // 要真的進到清單頁、看到那個題號——統計頁自己也寫「已不在目前的題庫裡」，只看字會在統計頁就成立（突變驗過才發現）
+    const miss = await page.waitForFunction(() => location.hash.startsWith('#/doubts') && document.getElementById('view').innerText.includes('bic-law-t30-001'), { timeout: 5000 }).then(() => true).catch(() => false);
+    check('標記：標過的題都不在題庫了 → 統計頁入口還在（寫「已不在目前的題庫裡」）、點得進清單頁看到題號', gone.includes('已不在目前的題庫裡') && miss, gone);
   } finally {
     await ctx.close();
   }
@@ -1337,10 +1349,47 @@ async function clickOnlyTest(browser, base) {
     const first = entryBtn ? await page.$eval('#view section.card', e => ({ id: e.id, t: e.innerText })) : { id: '首頁沒有設定入口', t: '' };
     check(`只能用點的：題目都匯入後（首頁已沒有「去匯入題目」：${noImportBtn === 0 ? '是' : '否'}），從首頁的設定入口點得進設定頁，第一塊是「這台裝置的紀錄」、顯示三種狀態之一；整段只開過 ${gotos} 次網址`,
       noImportBtn === 0 && first.id === 'persist' && PERSIST_LABELS.some(l => first.t.includes(l)) && gotos === 1, JSON.stringify(first).slice(0, 160));
-    // 設定頁 → 回首頁 → 統計 → 答案有疑問 → 回統計 → 回首頁，全部用點的
+    // 「用過一陣子」的狀態（2026-10-12 常設做法）：練一輪（有對有錯）、標一題答案有疑問，之後每一頁都要點得到、回得來
     if (entryBtn) await clickTo('a.back', '證照題庫練習');
-    await clickTo('a.btn[href="#/stats?cert=bic"]', '統計');
-    await clickTo('a.back', '證照題庫練習');
+    await clickTo('a.btn[href="#/setup?cert=bic"]');
+    await (await page.waitForSelector('form button[type=submit]')).click();
+    for (let n = 0; n < 10; n++) {
+      await page.waitForSelector('.opt:not([disabled])');
+      await page.click('.opt[data-k="1"]');
+      await page.waitForSelector('.feedback:not([hidden])');
+      if (n === 0) await page.click('.feedback .btn.doubt');
+      await page.click('.q .btn.primary');
+    }
+    await clickTo('a.btn::-p-text(回首頁)', '證照題庫練習');
+    const visited = [];
+    const roundTrip = async (sel, mark, back = 'a.back') => {
+      const el = await page.waitForSelector(sel, { visible: true, timeout: 5000 }).catch(() => null);
+      if (!el) { visited.push(`${mark}：首頁找不到入口（${sel}）`); return; }
+      try { await el.click(); } catch (e) { visited.push(`${mark}：入口點不到（${e.message}）`); return; }
+      // 要等「離開首頁」再看內容：首頁上的按鈕文字可能就含有要找的字（例如設定入口寫著「備份與還原」）
+      const ok = await page.waitForFunction(m => location.hash !== '#/' && !document.querySelector('#settings-entry') && document.getElementById('view').innerText.includes(m),
+        { timeout: 5000 }, mark).then(() => true).catch(() => false);
+      const b = await page.waitForSelector(back, { visible: true, timeout: 3000 }).catch(() => null);
+      if (!ok || !b) { visited.push(`${mark}：${ok ? '回不了首頁' : '沒進到頁面'}`); return; }
+      await b.click();
+      if (!(await page.waitForSelector('#settings-entry', { timeout: 5000 }).catch(() => null))) visited.push(`${mark}：按了返回，沒回到首頁（停在 ${await page.evaluate(() => location.hash)}）`);
+    };
+    await roundTrip('#settings-entry a.btn', '備份與還原');
+    await roundTrip('a.btn[href="#/study?cert=bic"]', '反覆考過的規定');
+    await roundTrip('a.btn[href="#/practice?cert=bic&mode=mistakes&count=20"]', '/', 'a.back');
+    await roundTrip('a.btn[href="#/practice?cert=bic&mode=weak&count=20"]', '弱點複習');
+    await roundTrip('a.btn[href="#/exam?cert=bic&subject=law"]', '模擬考');
+    await roundTrip('a.btn[href="#/stats?cert=bic"]', '答案有疑問');
+    const here = await page.evaluate(() => location.hash);
+    if (here === '#/' || here === '') {
+      // 每一步都等「目的頁才有的元素」，不等字：返回連結本身就寫著「回統計」「回首頁」（同一個坑踩了三次，2026-10-12）
+      await clickTo('a.btn[href="#/stats?cert=bic"]'); await page.waitForSelector('#doubts-link a.btn');
+      await clickTo('#doubts-link a.btn'); await page.waitForSelector('.doubt-item');
+      await clickTo('a.back'); await page.waitForSelector('#doubts-link');
+      await clickTo('a.back'); await page.waitForSelector('#settings-entry');
+    } else visited.push(`繞完一圈後停在 ${here}，沒回到首頁`);
+    check(`只能用點的（用過一陣子：練過一輪、有錯題、標過一題）：設定、讀書、錯題複習、弱點複習、模擬考、統計、答案有疑問都點得到也回得來`,
+      visited.length === 0, visited.join('；'));
     check('只能用點的（主畫面模式）：狀態不是「已受保護」時，不再叫他「加到主畫面」，改說已經從主畫面打開、要靠備份',
       first.t.includes('已受保護') ? true : (first.t.includes('你已經是從主畫面打開的') && !first.t.includes('請把這個網站加到主畫面')), first.t.slice(0, 200));
     const top = await page.$eval('#view', v => [...v.children].slice(0, 2).map(e => e.id || e.tagName));

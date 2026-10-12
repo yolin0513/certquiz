@@ -708,8 +708,9 @@ async function statsView(gen, q) {
     table('依科目', L.groupRate(attempts, byId, x => x.subject), k => subjName.get(k) || k),
     table('依題目來源', L.groupRate(attempts, byId, x => x.source), k => srcName[k] || k),
     (d => h('section', { class: 'card', id: 'doubts-link' }, h('h3', { text: '答案有疑問' }),
-      h('p', { text: d.items.length ? `你標了 ${d.items.length} 題「答案有疑問」。` : '還沒有標記。作答後或讀書頁上可以按「標記：答案有疑問」。' }),
-      d.items.length ? h('a', { class: 'btn', href: `#/doubts?cert=${certId}`, text: `看這 ${d.items.length} 題` }) : null))(L.doubtList(await DB.getMeta('doubts', {}), questions, certId)),
+      // 入口不能只看「還在題庫裡的」：重新匯入後標過的題都不在了，清單頁上那段「已不在題庫」的說明也要進得去（2026-10-12 盤點入口時發現）
+      h('p', { text: d.items.length || d.missing.length ? `你標了 ${d.items.length} 題「答案有疑問」${d.missing.length ? `，另有 ${d.missing.length} 題已不在目前的題庫裡` : ''}。` : '還沒有標記。作答後或讀書頁上可以按「標記：答案有疑問」。' }),
+      d.items.length || d.missing.length ? h('a', { class: 'btn', href: `#/doubts?cert=${certId}`, text: `看標記的題（${d.items.length + d.missing.length}）` }) : null))(L.doubtList(await DB.getMeta('doubts', {}), questions, certId)),
     h('section', { class: 'card' }, h('h3', { text: '最近的模擬考' }),
       hist.length ? h('table', {}, h('tr', {}, ['日期', '科目', '分數', '結果'].map(t => h('th', { text: t }))),
         hist.map(x => h('tr', {}, h('td', { text: new Date(x.ts).toLocaleDateString('zh-TW') }), h('td', { text: subjName.get(x.subject) || x.subject }),
