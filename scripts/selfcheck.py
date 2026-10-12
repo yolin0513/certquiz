@@ -120,14 +120,19 @@ def _norm(s: str) -> str:
 
 
 def load_stems(cwd):
-    """R7 用：讀本機匯入包裡每一題的題幹（去空白）。回傳 (題幹集合, 讀了幾個匯入包)。
-    匯入包只在本機（data/local/import/），沒有就回空集合——呼叫端必須把「R7 沒啟用」印出來，不能當成通過。"""
+    """R7 用：讀本機題庫裡每一題的題幹（去空白）。回傳 (題幹集合, 讀了幾個檔)。
+    來源都只在本機：內控匯入包 data/local/import/、證基會「金融市場常識與職業道德」題庫 data/local/sfi/（2026-10-12 加：
+    加這張證照時發現 R7 只比對內控，新題庫的題目進公開 repo 擋不下來）。
+    沒有就回空集合——呼叫端必須把「R7 沒啟用」印出來，不能當成通過。"""
     stems, n = set(), 0
-    for f in sorted((Path(cwd) / "data" / "local" / "import").glob("*.json")):
+    local = Path(cwd) / "data" / "local"
+    for f in sorted(local.glob("import/*.json")) + sorted(local.glob("sfi/*.json")):
         try:
             pack = json.loads(f.read_text(encoding="utf-8"))
         except (OSError, ValueError):
             continue
+        if not pack.get("questions"):
+            continue   # 例如兩版差異檔：沒有題目，不算一個題庫檔
         n += 1
         for q in pack.get("questions", []):
             s = _norm(q.get("stem", ""))
@@ -254,7 +259,7 @@ def report(scope, problems):
         scope += f"；注意：沒有 {PRIVATE_LIST}，R6 只檢查內建用語"
     stems, n_packs = load_stems(ROOT)
     # R7 有沒有啟用一定要印出來：沒有匯入包時 R7 什麼都沒比，「通過」不代表沒有題目內容（常設規則 13）
-    scope += f"；R7 比對 {len(stems)} 題題幹（{n_packs} 個匯入包）" if stems else "；注意：R7 未啟用（本機沒有匯入包，沒比對題目內容）"
+    scope += f"；R7 比對 {len(stems)} 題題幹（{n_packs} 個本機題庫檔）" if stems else "；注意：R7 未啟用（本機沒有匯入包，沒比對題目內容）"
     if not problems:
         print(f"SELFCHECK OK（{scope}）")
         return 0
@@ -313,6 +318,7 @@ def selftest():
     if len(user) >= 2:
         cases.append(("本機 Windows 使用者名稱", "docs/u.md", f"作者 {user}\n".encode(), False, {"R4"}))
     fake_stem = "依" + "測試用規定" + "，下列何者為正確之處理方式？"   # 假題幹（執行時才組字串）
+    fake_stem_sfi = "金融從業人員" + "於測試情境" + "中，下列何者為適當之作法？"   # 假的證基會題庫題幹
     # R8 假樣本：不可見字元一律用 chr() 在執行時組出來，這支程式本身不含
     cases += [
         ("程式碼裡夾了 NBSP（R8）", "scripts/n.py", ("s = s.replace(\"" + chr(0xA0) + "\", \" \")\n").encode(), False, {"R8"}),
@@ -325,6 +331,7 @@ def selftest():
     cases += [
         ("文件裡夾了匯入包的題幹（R7）", "docs/notes.md", f"筆記：\n{fake_stem}\n".encode(), False, {"R7"}),
         ("題幹被換行拆開也要抓到（R7）", "docs/notes2.md", f"{fake_stem[:9]}\n  {fake_stem[9:]}\n".encode(), False, {"R7"}),
+        ("文件裡夾了證基會題庫的題幹（R7，data/local/sfi/）", "docs/notes3.md", f"整理：\n{fake_stem_sfi}\n".encode(), False, {"R7"}),
     ]
 
     tmp = Path(tempfile.mkdtemp(prefix=f"certquiz-selftest-{os.getpid()}-"))
@@ -354,6 +361,10 @@ def selftest():
         (tmp / "data/local/import").mkdir(parents=True, exist_ok=True)
         (tmp / "data/local/import/fake.json").write_text(json.dumps(
             {"format": "certquiz-import", "questions": [{"stem": fake_stem}, {"stem": "太短的題幹"}]}, ensure_ascii=False), encoding="utf-8")
+        # 假的證基會題庫（R7 也要比對 data/local/sfi/）
+        (tmp / "data/local/sfi").mkdir(parents=True, exist_ok=True)
+        (tmp / "data/local/sfi/fake-ethics.json").write_text(json.dumps(
+            {"questions": [{"stem": fake_stem_sfi}]}, ensure_ascii=False), encoding="utf-8")
 
         # 每一個樣本單獨一個情境
         for desc, path, content, force, expect in cases:
