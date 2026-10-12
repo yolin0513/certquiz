@@ -497,12 +497,25 @@ async function importStudyView(gen, q, cert, questions) {
 // ---------------------------------------------------------------- 法規修正標示（N1，Dispatch 2026-10-12）
 // 所有數字都從匯入的題目數出來（L.lawSummary），不寫死。三句限度一定在畫面上；沒有版本資料的題也要有一句說明，不能只有沉默。
 // 只寫官方事實（哪一部、哪一天修正），不寫「答案變了」；正解一律是官方答案卷的答案。
+// 尚未施行那句：畫面放改寫的短句（標「改寫」），旁邊可以展開看全國法規資料庫的原文（標「原文」）。
+// 不能拿改寫取代原文而不留痕跡：使用者以為是法規原文、其實是我們的轉述，就是另一種「正解依舊版」（Dispatch 2026-10-12）。
+function pendingShort(text) {
+  const m = text.match(/第\s*([0-9０-９～~、\-]+)\s*條/);
+  return `${m ? `第 ${m[1]} 條` : '部分條文'}還沒施行${text.includes('主管機關定') ? '，施行日期由主管機關另外決定' : ''}`;
+}
+function pendingNote(text) {
+  return [h('span', { text: pendingShort(text) }), h('span', { class: 'muted', text: '（改寫）' }),
+    h('details', { class: 'law-orig' }, h('summary', { text: '看法規資料庫原文' }),
+      h('p', { class: 'muted', text: '全國法規資料庫「生效狀態」原文（只把網頁排版的換行換成空格）：' }),
+      h('blockquote', { text: text }))];
+}
+
 function lawLimits(sum) {
   const pend = sum.batches.filter(b => b.pending);
   return h('ul', { class: 'law-limits' },
     h('li', {}, h('b', { text: '有標示，不代表答案錯了。' }), '程式只知道整部法規改過，不知道題目問的那一條有沒有改。正解仍是官方答案卷的答案。'),
     pend.map(b => h('li', {}, h('b', { text: `「${b.name}」${b.latest} 那次修正，有部分條文還沒施行。` }),
-      `全國法規資料庫寫：${b.pending}。你考試那天適用哪一版，要看考試日期。`)),
+      '你考試那天適用哪一版，要看考試日期。', ...pendingNote(b.pending))),
     h('li', {}, h('b', { text: '沒有標示，也不代表一定還有效。' }),
       `可練的 ${sum.total} 題裡，只有 ${sum.hasData} 題查得到法規的版本資料；其他 ${sum.none} 題沒有任何版本資料，我們不知道它依據的規定有沒有改過。`));
 }
@@ -528,7 +541,8 @@ function lawNote(item, sum) {
     const b = L.lawBatchOf(item, sum.batches);
     return h('div', { class: 'law-note amended' },
       h('p', { class: 'law-batch-h', text: '這題點名的法規，在考試後修正過' }),
-      x.laws.filter(e => e.after.length).map(e => h('p', { text: `「${e.name}」在 ${e.after.join('、')} 修正過（${asof}）。${e.pending ? `其中有部分條文還沒施行：${e.pending}。` : ''}` })),
+      x.laws.filter(e => e.after.length).map(e => h('div', {}, h('p', { text: `「${e.name}」在 ${e.after.join('、')} 修正過（${asof}）。` }),
+        e.pending ? h('p', {}, '其中', ...pendingNote(e.pending)) : null)),
       b ? h('p', { text: `題庫裡點名「${b.name}」的 ${b.total} 題全部是這種情況（整批依舊版）。` }) : null,
       h('p', { class: 'muted', text: '有標示不代表答案錯了：程式只知道整部法規改過，不知道這題問的那一條有沒有改。正解是官方答案卷的答案。' }));
   }

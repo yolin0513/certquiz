@@ -99,3 +99,5 @@ details summary { cursor: pointer; margin: 6px 0; }
 .law-tag.partial, .law-tag.none { color: var(--fg); }
 .law-note.partial, .law-note.none { border: 1px dashed var(--muted); border-radius: 8px; padding: 6px 10px; }
 .law-note.unchanged { border-left: 3px solid var(--ok); padding-left: 10px; }
+.law-orig { margin: 4px 0; }
+.law-orig blockquote { margin: 4px 0; padding: 6px 10px; border-left: 3px solid var(--muted); white-space: pre-wrap; }

@@ -48,8 +48,9 @@ def pending_text(pcode):
     if not p.exists():
         return None
     t = re.sub(r"\s+", " ", re.sub(r"&nbsp;", " ", re.sub(r"<[^>]+>", " ", p.read_text(encoding="utf-8"))))
-    m = re.search(r"生效狀態[：:]\s*※(本法規部分或全部條文尚未生效[^。]*?)\s+(\S[^。]*?施行日期[^。]*?定)", t)
-    return f"{m.group(1)}；{m.group(2).strip()}" if m else None
+    # 原文照抄網頁上連續的那一段（只把排版的換行與標籤換成一個空格），不拼接、不改字：畫面上會標成「原文」
+    m = re.search(r"生效狀態[：:]\s*※(本法規部分或全部條文尚未生效.*?施行日期[^。]*?定)", t)
+    return m.group(1).strip() if m else None
 
 
 def law_table():

@@ -788,6 +788,11 @@ async function importStudyTest(browser, base) {
       check(`法規修正卡（讀書頁）：數字＝匯入包數出來的（修正過 ${n('amended')}、沒修正 ${n('unchanged')}、一部分 ${n('partial')}、沒有資料 ${n('none')}，共 ${act.length}）；三句限度與「內控辦法整批依舊版」都在畫面上`,
         act.length > 0 && lt.includes(want) && lt.includes(`沒有版本資料 ${n('none')} 題`) && lt.includes('有標示，不代表答案錯了') && lt.includes('沒有標示，也不代表一定還有效')
         && lt.includes('有部分條文還沒施行') && lt.includes('「金融控股公司及銀行業內部控制及稽核制度實施辦法」整批依舊版'), lt.slice(0, 300));
+      // 尚未施行那句：改寫的短句標「改寫」；展開的原文要跟匯入包裡從法規資料庫抓的那段一字不差
+      const pend = [...new Set(act.flatMap(q => q.law.laws.map(e => e.pending).filter(Boolean)))];
+      const orig = await page.$$eval('.law-summary .law-orig blockquote', bs => bs.map(b => b.textContent));
+      check(`法規修正卡：尚未施行那句是改寫（標「改寫」），展開的原文＝匯入包的原文（${pend.length} 段）`,
+        pend.length > 0 && lt.includes('（改寫）') && orig.length === pend.length && pend.every(t => orig.includes(t)), JSON.stringify(orig).slice(0, 200));
       const notes = await page.$$eval('.study-q', cs => cs.map(c => !!c.querySelector('.law-note')));
       check(`法規修正標示（讀書頁）：${notes.length} 張題卡每張都有法規說明（含沒有版本資料的題）`, notes.length > 0 && notes.every(Boolean));
     }
