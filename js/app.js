@@ -123,7 +123,7 @@ async function setupView(gen, q) {
   h('label', { text: '出題順序' }), h('select', { name: 'order' },
     h('option', { value: 'unseen', text: '沒做過的優先' }), h('option', { value: 'random', text: '完全隨機' })),
   h('button', { class: 'btn primary', type: 'submit', text: '開始' }));
-  render(gen, h('a', { class: 'back', href: '#/', text: '← 回首頁' }), form);
+  render(gen, h('a', { class: 'back', href: '#/', text: '← 回首頁' }), form, lawSummaryCard(L.lawSummary(questions)));
 }
 
 // ---------------------------------------------------------------- 練習
@@ -148,6 +148,7 @@ async function practiceView(gen, q) {
     return;
   }
   const studiedMap = await DB.getMeta('studied', {});
+  const lawSum = L.lawSummary(questions);
   const results = [];
   let i = 0;
 
@@ -172,7 +173,8 @@ async function practiceView(gen, q) {
         h('p', { class: 'src', text: L.sourceLabel(item) }),
         item.explain ? h('p', { class: 'explain', text: item.explain }) : null,
         item.basis ? h('p', { class: 'src basis', text: L.basisText(item) }) : null,
-        answerChangeNote(item, questions));
+        answerChangeNote(item, questions),
+        lawNote(item, lawSum));
       feedback.hidden = false;
       next.hidden = false;
       results.push({ item, k, correct });
@@ -186,6 +188,9 @@ async function practiceView(gen, q) {
       h('section', { class: 'card q' },
         item.source && item.source.startsWith('original') ? h('p', { class: 'src', text: L.sourceLabel(item) }) : null,
         item.scope === 'outside' ? h('p', { class: 'ng scope-out', text: `不在 116 年考試範圍內：${item.change === 'deleted' ? '116 年版已刪除這題' : item.answerChanged ? '116 年版已改過這題，而且正解換了（作答後會列出新舊正解）' : '116 年版已改過這題'}。練這題可能學到過時的內容。` }) : null,
+        item.law && item.law.status === 'amended' ? (b => h('p', { class: 'ng law-pre', text: b
+          ? `這題點名的「${b.name}」在考試後修正過；題庫裡點名它的 ${b.total} 題整批依舊版出題。作答後會列出修正日期。`
+          : '這題點名的法規在考試後修正過，作答後會列出修正日期。' }))(L.lawBatchOf(item, lawSum.batches)) : null,
         h('p', { class: 'stem', text: item.stem }), h('div', { class: 'opts' }, opts), feedback, next));
   };
 
@@ -419,6 +424,7 @@ async function importStudyView(gen, q, cert, questions) {
       h('p', { text: '還沒有題目。這張證照的題目要從「設定 → 匯入題目」放進來。' }), h('a', { class: 'btn', href: '#/settings', text: '去匯入題目' })));
     return;
   }
+  const lawSum = L.lawSummary(questions);
 
   if (view === 'points') {
     const list = L.pointList(await DB.getMeta(`points:${certId}`, []), questions);
@@ -439,7 +445,7 @@ async function importStudyView(gen, q, cert, questions) {
       return;
     }
     await markStudied(list.map(x => `${certId}:point:${x.id}`));
-    render(gen, home, tabs, notice(),
+    render(gen, home, tabs, notice(), lawSummaryCard(lawSum),
       h('section', { class: 'card' },
         h('h2', { text: `${cert.short}：反覆考過的規定 ${n} 組` }),
         h('p', { class: 'muted', text: `涵蓋 ${covered} 題次；可練的題目一共 ${active.length} 題。依考過的期數排序，考過越多期的排越前面。` }),
@@ -450,6 +456,7 @@ async function importStudyView(gen, q, cert, questions) {
         h('p', { class: 'stem', text: x.rep.stem }),
         optsList(x.rep),
         h('p', { class: 'src', text: L.sourceLabel(x.rep) }),
+        lawNote(x.rep, lawSum),
         x.variants.length ? h('details', {}, h('summary', { text: `其他期的問法（${x.variants.length}）` }),
           x.variants.map(v => h('div', { class: 'variant' }, h('p', { class: 'stem', text: v.stem }),
             h('p', { class: 'muted', text: `正解：(${v.answer}) ${v.options[v.answer - 1]}` }), h('p', { class: 'src', text: L.sourceLabel(v) })))) : null)),
@@ -467,13 +474,13 @@ async function importStudyView(gen, q, cert, questions) {
         h('div', { class: 'row' }, periods.map(pd => h('a', { class: 'btn', href: `#/study?cert=${certId}&view=browse&subject=${s.id}&period=${pd}`,
           text: `第 ${pd} 期（${active.filter(x => x.subject === s.id && x.period === pd).length} 題）` }))));
     });
-    render(gen, home, tabs,
+    render(gen, home, tabs, lawSummaryCard(lawSum),
       h('section', { class: 'card' }, h('p', { class: 'muted', text: '逐期瀏覽題目與官方正解。重複出現的題目只列在最新的那一期。' })), groups);
     return;
   }
   const list = active.filter(x => x.subject === subject && String(x.period) === String(period)).sort((a, b) => (a.qno || 0) - (b.qno || 0));
   await markStudied([`${certId}:period:${subject}:${period}`]);
-  render(gen, h('a', { class: 'back', href: `#/study?cert=${certId}&view=browse`, text: '← 回期別清單' }), tabs,
+  render(gen, h('a', { class: 'back', href: `#/study?cert=${certId}&view=browse`, text: '← 回期別清單' }), tabs, lawSummaryCard(lawSum),
     h('section', { class: 'card' }, h('h2', { text: `${subjName.get(subject) || subject}・第 ${period} 期（${list.length} 題）` }),
       h('div', { class: 'row' }, h('a', { class: 'btn primary', href: `#/practice?cert=${certId}&mode=practice&subject=${subject}&period=${period}&count=${list.length}&order=unseen`,
         text: `讀完了，練這 ${list.length} 題` }))),
@@ -481,7 +488,53 @@ async function importStudyView(gen, q, cert, questions) {
       h('p', { class: 'muted', text: `${i + 1}／${list.length}` }),
       h('p', { class: 'stem', text: x.stem }),
       optsList(x),
-      h('p', { class: 'src', text: L.sourceLabel(x) }))));
+      h('p', { class: 'src', text: L.sourceLabel(x) }),
+      lawNote(x, lawSum))));
+}
+
+// ---------------------------------------------------------------- 法規修正標示（N1，Dispatch 2026-10-12）
+// 所有數字都從匯入的題目數出來（L.lawSummary），不寫死。三句限度一定在畫面上；沒有版本資料的題也要有一句說明，不能只有沉默。
+// 只寫官方事實（哪一部、哪一天修正），不寫「答案變了」；正解一律是官方答案卷的答案。
+function lawLimits(sum) {
+  const pend = sum.batches.filter(b => b.pending);
+  return h('ul', { class: 'law-limits' },
+    h('li', {}, h('b', { text: '有標示，不代表答案錯了。' }), '程式只知道整部法規改過，不知道題目問的那一條有沒有改。正解仍是官方答案卷的答案。'),
+    pend.map(b => h('li', {}, h('b', { text: `「${b.name}」${b.latest} 那次修正，有部分條文還沒施行。` }),
+      `全國法規資料庫寫：${b.pending}。你考試那天適用哪一版，要看考試日期。`)),
+    h('li', {}, h('b', { text: '沒有標示，也不代表一定還有效。' }),
+      `可練的 ${sum.total} 題裡，只有 ${sum.hasData} 題查得到法規的版本資料；其他 ${sum.none} 題沒有任何版本資料，我們不知道它依據的規定有沒有改過。`));
+}
+
+function lawSummaryCard(sum) {
+  if (!sum.total) return null;
+  return h('section', { class: 'card law-summary' },
+    h('h3', { text: '法規修正：有些題目依據的法規，在考試後改過' }),
+    h('p', { text: `可練的 ${sum.total} 題裡：考試後修正過 ${sum.amended} 題；查得到、考試後沒修正 ${sum.unchanged} 題；`
+      + `${sum.partial ? `只查得到一部分、沒看到修正 ${sum.partial} 題；` : ''}沒有版本資料 ${sum.none} 題。` }),
+    sum.batches.map(b => h('div', { class: 'law-batch' },
+      h('p', { class: 'law-batch-h', text: `「${b.name}」整批依舊版` }),
+      h('p', { text: `題庫裡點名這部法規的 ${b.total} 題，全部是照考試當時的舊版出題；它在 ${b.latest} 又修正過。這些題的官方正解是依舊版，讀的時候要知道。` }))),
+    lawLimits(sum),
+    h('p', { class: 'muted', text: `法規版本資料查詢日 ${sum.checked}（全國法規資料庫、金管會主管法規查詢系統）。每題的「法規基準日」是那期答案卷的疑義申請起日（測驗後約兩天）。` }));
+}
+
+function lawNote(item, sum) {
+  const x = item.law;
+  if (!x) return null;
+  const asof = item.law_as_of ? `這期的法規基準日是 ${item.law_as_of}` : '';
+  if (x.status === 'amended') {
+    const b = L.lawBatchOf(item, sum.batches);
+    return h('div', { class: 'law-note amended' },
+      h('p', { class: 'law-batch-h', text: '這題點名的法規，在考試後修正過' }),
+      x.laws.filter(e => e.after.length).map(e => h('p', { text: `「${e.name}」在 ${e.after.join('、')} 修正過（${asof}）。${e.pending ? `其中有部分條文還沒施行：${e.pending}。` : ''}` })),
+      b ? h('p', { text: `題庫裡點名「${b.name}」的 ${b.total} 題全部是這種情況（整批依舊版）。` }) : null,
+      h('p', { class: 'muted', text: '有標示不代表答案錯了：程式只知道整部法規改過，不知道這題問的那一條有沒有改。正解是官方答案卷的答案。' }));
+  }
+  const names = x.laws.map(e => `「${e.name}」`).join('、');
+  const text = x.status === 'unchanged' ? `題目點名的法規 ${names} 查得到的版本，在這期考試後沒有修正（${asof}；查詢日 ${x.checked}）。`
+    : x.status === 'partial' ? `題目點名的法規 ${names} 只查得到一部分的版本資料：查得到的沒有修正，查不到的不能保證。`
+    : `這題沒有法規版本資料（${x.laws.length ? `點名的 ${names} 查不到版本` : '題目沒有點名法規'}），不知道依據的規定在考試後有沒有改過。沒有標示不代表仍然有效。`;
+  return h('p', { class: 'src law-note', text });
 }
 
 // 正解換了的題（113 年版 → 116 年版）：寫明新舊正解各是什麼。照舊版背會「確信地答錯」，所以作答後與讀書頁都單獨標出來。

@@ -83,3 +83,11 @@ a.item .meta::after { content: " ›"; }
 .card.warn h3 { margin-top: 0; }
 .variant { border-top: 1px dashed var(--line); padding-top: 6px; margin-top: 6px; }
 details summary { cursor: pointer; margin: 6px 0; }
+/* 法規修正標示（N1）：整批依舊版與單題修正過用醒目框，不只一行小字 */
+.law-batch, .law-note.amended { border: 2px solid var(--ng); background: var(--ng-bg); border-radius: 10px; padding: 10px 12px; margin: 10px 0; }
+.card.law-summary { border: 2px solid var(--ng); }
+.card.law-summary h3 { margin-top: 0; }
+.law-batch-h { color: var(--ng); font-weight: 700; margin-top: 0; }
+.law-limits { padding-left: 1.2em; margin: 8px 0; }
+.law-limits li { margin: 6px 0; }
+.law-pre { margin-top: 0; }

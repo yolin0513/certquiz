@@ -766,6 +766,18 @@ async function importStudyTest(browser, base) {
     const warn = await page.$$eval('.card.warn', cs => cs.map(c => c.innerText));
     check('反覆考點頁：上下各一張警示卡，寫明「逐組核對過」（不再寫尚未通過驗證）「一組＝同一條規定」「不是考試範圍」「沒出現在清單上不代表不常考」「量的是寫法重複、不等於規定重要」',
       warn.length === 2 && warn.every(t => t.includes('不是考試範圍') && !t.includes('尚未通過驗證') && t.includes('每一組都逐組核對過，確定問的是同一條規定') && t.includes('一組＝同一條規定在不同期被考過，問法可能不同') && t.includes('卡片上標「同一份清單（出處未查證）」，跟「同一條規定」分開') && t.includes('沒出現在這份清單上，不代表那條規定不常考') && t.includes(`這 ${pack.points.length} 組量的是「題目寫法重複」，不等於「這條規定重要」`)), JSON.stringify(warn).slice(0, 200));
+    // 法規修正標示（N1）：數字從匯入包的 law 欄位數，不寫死；三句限度、整批依舊版都在畫面上；每張題卡都有法規說明（沒有版本資料的也有）
+    {
+      const act = pack.questions.filter(x => !x.dupOf && x.status !== 'retired' && x.law);
+      const n = st => act.filter(x => x.law.status === st).length;
+      const lt = await page.$eval('.law-summary', c => c.innerText).catch(() => '');
+      const want = `可練的 ${act.length} 題裡：考試後修正過 ${n('amended')} 題；查得到、考試後沒修正 ${n('unchanged')} 題；`;
+      check(`法規修正卡（讀書頁）：數字＝匯入包數出來的（修正過 ${n('amended')}、沒修正 ${n('unchanged')}、一部分 ${n('partial')}、沒有資料 ${n('none')}，共 ${act.length}）；三句限度與「內控辦法整批依舊版」都在畫面上`,
+        act.length > 0 && lt.includes(want) && lt.includes(`沒有版本資料 ${n('none')} 題`) && lt.includes('有標示，不代表答案錯了') && lt.includes('沒有標示，也不代表一定還有效')
+        && lt.includes('有部分條文還沒施行') && lt.includes('「金融控股公司及銀行業內部控制及稽核制度實施辦法」整批依舊版'), lt.slice(0, 300));
+      const notes = await page.$$eval('.study-q', cs => cs.map(c => !!c.querySelector('.law-note')));
+      check(`法規修正標示（讀書頁）：${notes.length} 張題卡每張都有法規說明（含沒有版本資料的題）`, notes.length > 0 && notes.every(Boolean));
+    }
     const cards = await page.$$eval('.study-q', cs => cs.map(c => ({
       head: c.querySelector('.muted').textContent, stem: c.querySelector('.stem').textContent,
       right: [...c.querySelectorAll(':scope > .study-opts li.right')].map(li => li.textContent) })));
@@ -790,18 +802,49 @@ async function importStudyTest(browser, base) {
     const bcards = await page.$$eval('.study-q', cs => cs.map(c => [...c.querySelectorAll('.study-opts li.right')].length));
     check(`依期別瀏覽：法規第 47 期 ${bcards.length} 題＝匯入包可練的 ${want.length} 題，每題只標一個正解`,
       bcards.length === want.length && bcards.every(n => n === 1));
+    {
+      const amd = want.filter(x => x.law && x.law.status === 'amended').length;
+      const got = await page.$$eval('.study-q', cs => cs.map(c => [!!c.querySelector('.law-note'), !!c.querySelector('.law-note.amended')]));
+      check(`法規修正標示（期別頁）：法規第 47 期醒目框 ${got.filter(g => g[1]).length} 題＝匯入包裡修正過的 ${amd} 題；每題都有法規說明`,
+        amd > 0 && got.filter(g => g[1]).length === amd && got.every(g => g[0]));
+    }
     // 讀過這一期再練：作答紀錄標 studied=true
     await (await page.waitForSelector('a.btn.primary::-p-text(讀完了，練這)')).click();
+    const lawSeen = [];
     for (let n = 0; n < 2; n++) {
       await page.waitForSelector('.opt:not([disabled])');
+      const pre = await page.$eval('.q', c => ({ stem: c.querySelector('.stem').textContent, pre: !!c.querySelector('.law-pre') }));
       await page.click('.opt[data-k="1"]');
       await page.waitForSelector('.feedback:not([hidden])');
+      const note = await page.$eval('.feedback', f => ({ any: !!f.querySelector('.law-note'), amended: !!f.querySelector('.law-note.amended') }));
+      const it = pack.questions.find(x => !x.dupOf && x.stem === pre.stem);
+      lawSeen.push(!!it && !!it.law && pre.pre === (it.law.status === 'amended') && note.any && note.amended === (it.law.status === 'amended'));
       await page.click('.q .btn.primary');
     }
+    check('法規修正標示（練習）：修正過的題作答前就標、作答後列細節；其他題作答後也有一句說明', lawSeen.length === 2 && lawSeen.every(Boolean), JSON.stringify(lawSeen));
     const at = await page.evaluate(() => new Promise(r => { const q = indexedDB.open('certquiz'); q.onsuccess = () => {
       const g = q.result.transaction('attempts').objectStore('attempts').getAll(); g.onsuccess = () => r(g.result); }; }));
     check('讀過這一期再練：這 2 筆作答紀錄都標 studied=true、題目都屬於法規第 47 期',
       at.length === 2 && at.every(x => x.studied === true && byId.get(x.qid).subject === 'law' && byId.get(x.qid).period === 47), JSON.stringify(at.map(x => [x.qid, x.studied])));
+    {
+      // 一定要碰到一題修正過的：法規第 47 期一直作答，直到出現作答前就有標示的題（最多整期）
+      const n47 = pack.questions.filter(x => !x.dupOf && x.subject === 'law' && x.period === 47).length;
+      await gotoView(page, base + `#/practice?cert=bic&mode=practice&subject=law&period=47&count=${n47}&order=random`);
+      let hit = null;
+      for (let k = 0; k < n47 && !hit; k++) {
+        await page.waitForSelector('.opt:not([disabled])');
+        const pre = await page.$eval('.q', c => ({ stem: c.querySelector('.stem').textContent, pre: c.querySelector('.law-pre')?.textContent || '' }));
+        await page.click('.opt[data-k="1"]');
+        await page.waitForSelector('.feedback:not([hidden])');
+        if (pre.pre) hit = { ...pre, fb: await page.$eval('.feedback .law-note.amended', e => e.innerText).catch(() => '') };
+        else await page.click('.q .btn.primary');
+      }
+      const it = hit && pack.questions.find(x => !x.dupOf && x.stem === hit.stem);
+      const e = it && it.law && it.law.laws.find(l => l.after.length);
+      check(`法規修正標示（練習）：碰到修正過的題——作答前標「${hit ? hit.pre.slice(0, 30) : '（沒碰到）'}…」，作答後醒目框寫出法規名稱與修正日期、「有標示不代表答案錯了」`,
+        !!hit && it.law.status === 'amended' && hit.fb.includes(e.name) && hit.fb.includes(e.after[e.after.length - 1]) && hit.fb.includes('有標示不代表答案錯了'), hit ? hit.fb.slice(0, 160) : '');
+      await gotoView(page, base + '#/');
+    }
     check('內控讀書模式：沒有頁面錯誤', errors.length === 0, errors.join('；'));
   } finally {
     await ctx.close();

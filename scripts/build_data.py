@@ -351,6 +351,27 @@ def attach_points(cid, items, pack):
     return []
 
 
+LAW_FLAGS = ROOT / "data" / "local" / "law" / "flags.json"
+
+
+def attach_law(cid, items, pack):
+    """N1（Dispatch 2026-10-12）：每題標上「題幹點名的法規，在法規基準日之後有沒有修正過」。
+    來源：data/local/law/flags.json（scripts/law_flags.py 產生）。沒有這個檔就不放（匯入包照樣建，App 照舊不顯示）。
+    數字不寫進匯入包的說明文字：App 從每題的 law 欄位自己數，法規資料更新後重跑就跟著變。回傳錯誤清單。"""
+    if cid != "bic" or not LAW_FLAGS.exists():
+        return []
+    d = json.loads(LAW_FLAGS.read_text(encoding="utf-8"))
+    flags = d["flags"]
+    active = [q for q in items if not q.get("dupOf") and q.get("status") != "retired"]
+    missing = [q["id"] for q in active if q["id"] not in flags]
+    if missing:
+        return [f"法規修正標示少了 {len(missing)} 題（重新跑 scripts/law_flags.py）：{missing[:3]}"]
+    for q in active:
+        q["law"] = dict(flags[q["id"]], checked=d["checked"])
+    pack["counts"]["law"] = {s: sum(1 for q in active if q["law"]["status"] == s) for s in ("amended", "unchanged", "partial", "none")}
+    return []
+
+
 def build_local(certs, check_only):
     cert_ids = {c["id"] for c in certs}
     files, qs, errs = collect(LOCAL_SRC, cert_ids, "local")
@@ -371,7 +392,7 @@ def build_local(certs, check_only):
             "notice": "本機自用：題目來自使用者自行取得的官方歷屆試題 PDF。不得上傳、不得散布。",
             "questions": items,
         }
-        perr = attach_points(cid, items, pack)
+        perr = attach_points(cid, items, pack) or attach_law(cid, items, pack)
         if perr:
             return None, perr
         name = next(c["short"] for c in certs if c["id"] == cid)

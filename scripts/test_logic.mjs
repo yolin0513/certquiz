@@ -287,5 +287,52 @@ if (existsSync(real)) {
   }
 }
 
+// 法規修正標示（N1）：格式檢查兩個方向；統計從題目數出來、四類相加＝總數；「整批依舊版」只認全部都修正過、題數夠的法規
+{
+  const lw = (status, laws) => ({ status, checked: '2026-10-08', laws });
+  const A = { name: '甲辦法', known: true, after: ['2026-05-06'], pending: '第 1 條施行日期由主管機關定' };
+  const B = { name: '乙法', known: true, after: [] };
+  const C = { name: '丙法', known: false, after: [] };
+  const qs = [
+    ...Array.from({ length: 10 }, (_, i) => q(`bic-law-t47-${String(i + 1).padStart(3, '0')}`, { law: lw('amended', [A]) })),
+    q('bic-law-t47-011', { law: lw('amended', [B, { ...A, name: '丁法', pending: undefined }]) }),
+    q('bic-law-t47-012', { law: lw('unchanged', [B]) }),
+    q('bic-law-t47-013', { law: lw('partial', [B, C]) }),
+    q('bic-law-t47-014', { law: lw('none', []) }),
+    q('bic-law-t47-015', { law: lw('none', [C]) }),
+    q('bic-law-t47-016', { law: lw('amended', [A]), dupOf: 'bic-law-t47-001' }),
+  ].map(x => { if (x.law) x.law.laws = x.law.laws.map(e => Object.fromEntries(Object.entries(e).filter(([, v]) => v !== undefined))); return x; });
+  check('法規標示：合格的通過', L.validateImportPack(pack(qs), ['bic']).ok, L.validateImportPack(pack(qs), ['bic']).errors.join('；'));
+  const bad = [
+    ['狀態不認得', { ...qs[11], law: lw('maybe', [B]) }],
+    ['說修正過卻沒有任何修正日期', { ...qs[11], law: lw('amended', [B]) }],
+    ['有修正日期卻說沒修正', { ...qs[11], law: lw('unchanged', [A]) }],
+    ['日期格式不對', { ...qs[11], law: lw('amended', [{ ...A, after: ['115.05.06'] }]) }],
+    ['缺查詢日', { ...qs[11], law: { status: 'none', laws: [] } }],
+  ];
+  for (const [d, x] of bad) check(`法規標示：${d} → 擋`, !L.validateImportPack(pack([x]), ['bic']).ok);
+  const s = L.lawSummary(qs);
+  check(`法規統計：重複題不算；四類 ${s.amended}＋${s.unchanged}＋${s.partial}＋${s.none}＝${s.total}（應 11＋1＋1＋2＝15）；有版本資料 ${s.hasData}（應 13）`,
+    s.total === 15 && s.amended === 11 && s.unchanged === 1 && s.partial === 1 && s.none === 2 && s.hasData === 13 && s.checked === '2026-10-08');
+  check(`法規統計：整批依舊版只有甲辦法（10 題全修正過）；丁法只有 1 題、乙法沒全修正，都不算：${s.batches.map(b => b.name)}`,
+    s.batches.length === 1 && s.batches[0].name === '甲辦法' && s.batches[0].total === 10 && s.batches[0].latest === '2026-05-06' && !!s.batches[0].pending);
+  check('法規統計：題數門檻改成 11 就沒有整批', L.lawSummary(qs, 11).batches.length === 0);
+  check('法規統計：沒有 law 欄位的題庫 → 總數 0', L.lawSummary([q('bic-law-t47-001')]).total === 0);
+  const realBic = join(ROOT, 'data', 'local', 'import', 'bic-匯入包.json');
+  const flagsF = join(ROOT, 'data', 'local', 'law', 'flags.json');
+  if (existsSync(realBic) && existsSync(flagsF)) {
+    const r = L.validateImportPack(JSON.parse(readFileSync(realBic, 'utf-8')), ['bic']);
+    const f = JSON.parse(readFileSync(flagsF, 'utf-8'));
+    const rs = L.lawSummary(r.questions);
+    const active = r.questions.filter(L.isActive).length;
+    check(`真的內控匯入包：法規統計四類 ${rs.amended}＋${rs.unchanged}＋${rs.partial}＋${rs.none}＝${rs.total}＝可練 ${active} 題，而且跟 law_flags.py 的計數一致`,
+      r.ok && rs.total === active && rs.amended + rs.unchanged + rs.partial + rs.none === active
+      && rs.amended === f.counts.amended && rs.none === f.counts.none, JSON.stringify(f.counts));
+    const ic = rs.batches.find(b => b.name === '金融控股公司及銀行業內部控制及稽核制度實施辦法');
+    check(`真的內控匯入包：內控辦法列為整批依舊版（${ic && ic.total} 題、最後修正 ${ic && ic.latest}、有尚未施行的條文）`,
+      !!ic && ic.total === ic.amended && !!ic.pending, JSON.stringify(rs.batches.map(b => [b.name, b.total, b.amended])));
+  }
+}
+
 console.log(fails ? `TEST-LOGIC FAILED：${fails} 項不符` : 'TEST-LOGIC OK：全部符合');
 process.exit(fails ? 1 : 0);

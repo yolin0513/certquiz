@@ -44,6 +44,7 @@ export function validateImportPack(obj, knownCerts) {
     if (q.answerChanged !== undefined && q.answerChanged !== true) errors.push(`${tag}：answerChanged 只能是 true 或不寫`);
     if (q.prevAnswer !== undefined && !(q.prevAnswer && [1, 2, 3, 4].includes(q.prevAnswer.answer) && typeof q.prevAnswer.text === 'string' && q.prevAnswer.text))
       errors.push(`${tag}：prevAnswer 格式不對（要有舊版正解 1～4 與文字）`);
+    if (q.law !== undefined && !validLaw(q.law)) errors.push(`${tag}：法規修正標示（law）格式不對`);
   });
   // dupOf 必須指到包內存在、而且本身不是重複的題；newId（舊版改過的題指到新版那題）也必須在包內、而且在考試範圍內
   const byId = new Map(qs.map(q => [q && q.id, q]));
@@ -82,6 +83,45 @@ export function validateImportPack(obj, knownCerts) {
     }
   }
   return { ok: errors.length === 0, errors, cert: obj.cert, questions: errors.length ? [] : qs, points: errors.length ? [] : points };
+}
+
+// ---------------------------------------------------------------- 法規修正標示（N1，Dispatch 2026-10-12）
+// 每題的 law：{ status, checked, laws: [{ name, known, after: [YYYY-MM-DD…], pending? }] }（scripts/law_flags.py）。
+// 數字一律從題目數出來，不寫死：法規資料更新、重新匯入後就跟著變。
+export const LAW_STATUSES = ['amended', 'unchanged', 'partial', 'none'];
+const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+
+function validLaw(x) {
+  return !!x && typeof x === 'object' && LAW_STATUSES.includes(x.status) && DATE_RE.test(x.checked || '') && Array.isArray(x.laws)
+    && x.laws.every(e => e && typeof e.name === 'string' && e.name && typeof e.known === 'boolean' && Array.isArray(e.after)
+      && e.after.every(d => DATE_RE.test(d)) && (e.pending === undefined || (typeof e.pending === 'string' && e.pending)))
+    && (x.status === 'amended') === x.laws.some(e => e.after.length > 0);
+}
+
+/**
+ * 法規修正的統計：{ total, amended, unchanged, partial, none, hasData, checked, batches[] }。
+ * total 只算有 law 欄位的可練題；四類相加＝total。
+ * batches：「整批依舊版」的法規——題庫裡點名它的題，全部都在考試後修正過，而且至少 minBatch 題（一部常考的法規整批過時，跟零星幾題不同）。
+ */
+export function lawSummary(questions, minBatch = 10) {
+  const qs = questions.filter(q => isActive(q) && q.law);
+  const n = Object.fromEntries(LAW_STATUSES.map(s => [s, qs.filter(q => q.law.status === s).length]));
+  const by = new Map();
+  for (const q of qs) for (const e of q.law.laws) {
+    const r = by.get(e.name) || { name: e.name, total: 0, amended: 0, latest: '', pending: null };
+    r.total += 1;
+    if (e.after.length) { r.amended += 1; r.latest = [r.latest, ...e.after].sort().pop(); }
+    if (e.pending) r.pending = e.pending;
+    by.set(e.name, r);
+  }
+  const batches = [...by.values()].filter(r => r.total >= minBatch && r.amended === r.total).sort((a, b) => b.total - a.total);
+  return { total: qs.length, ...n, hasData: n.amended + n.unchanged + n.partial, checked: qs[0] ? qs[0].law.checked : null, batches };
+}
+
+/** 這題點名的法規裡，屬於「整批依舊版」的那一部（沒有就 null）。 */
+export function lawBatchOf(q, batches) {
+  if (!q.law) return null;
+  return batches.find(b => q.law.laws.some(e => e.name === b.name)) || null;
 }
 
 /** 練習時可出的題：不是重複題、沒有標 retired */
