@@ -7,6 +7,12 @@
   python -u scripts/ethics_stats.py lock       鎖定代理的判斷檔（雜湊入 data/local/sfi/log.tsv）
   python -u scripts/ethics_stats.py build      算統計、比對驗尺、產出 HTML（data/local/sfi/ethics-重點整理.html，只放本機）
 所有門檻與口徑照 docs/L 第 9 節，寫在下面的常數裡；揭曉後不改。
+
+第二輪（docs/L 第 11 節，算之前寫定並提交 638c60c）：
+  python -u scripts/ethics_stats.py classify2  題型分類 v2（只看題幹最後一句）＋全新驗尺樣本（排除第一輪 60 題，每類 20 題，種子 20261014）
+  python -u scripts/ethics_stats.py lock2      鎖定新代理的判斷檔
+  python -u scripts/ethics_stats.py build 2    用 v2 分類與通用選項 v2 重算；組合型修正前後比較；驗尺 v2 過才呈現「對／錯」
+第一輪的規則（qtype1、is_generic1）保留不覆蓋。
 """
 import hashlib
 import html
@@ -51,6 +57,16 @@ COMBO = re.compile(r"^[A-Ea-e甲乙丙丁戊]+$")
 # 事後補充（2026-10-12，看到排行之後才發現；**不改計數、不改口徑**，只在畫面上標註）：
 # 事先定的通用選項規則沒抓到「A.、B.都正確」「只 A.正確」「(1)及(2)」這類組合型寫法，它們混進了實質選項的排行。
 POSTHOC_COMBO = re.compile(r"(都|皆|均)(不?正確|錯誤)$|^只?[A-Ea-e]\.?(正確|錯誤)$|^\(\d\)(及|、|與|和)\(\d\)")
+# ---- 第二輪（docs/L 第 11 節）
+SEED2 = 20261014
+SAMPLE2_MD = D / "stats-ruler2-sample.md"
+JUDGE2 = D / "stats-ruler2-judge.tsv"
+KEY2 = D / "stats-ruler2-key.json"
+ROUND1_STATS = D / "ethics-stats-round1.json"
+NEG2 = re.compile(r"錯誤|不正確|有誤|不適當|不恰當|非正確|不妥|為非|何者非|不是|並非|非屬|不屬|不包括|不包含|不得|不可|不宜|不應|不能|除外|不符|不需|無關|違反")
+POS2 = re.compile(r"正確|適當|恰當|為真|妥當|合宜|妥適")
+LAST_CLAUSE = re.compile(r"[，,；;：:。]")
+COMBO_FIX_OK = 0.8
 CLS_NAME = {"neg": "反向敘述題（問哪個是錯的）", "pos": "正向敘述題（問哪個是對的）", "other": "其他（問名詞、數字、對象、行為）"}
 PART = I.PART_NAME
 
@@ -66,7 +82,7 @@ def n2(s):
     return re.sub(r"\s", "", unicodedata.normalize("NFKC", s))
 
 
-def is_generic(opt):
+def is_generic1(opt):
     t = n2(opt)
     if GENERIC.search(t):
         return True
@@ -74,8 +90,29 @@ def is_generic(opt):
     return bool(c) and bool(COMBO.match(c))
 
 
-def qtype(q):
+def qtype1(q):
     return "neg" if NEG.search(q["stem"]) else "pos" if POS.search(q["stem"]) else "other"
+
+
+def is_generic2(opt):
+    """第一輪的規則，加上事後發現的組合型寫法（docs/L 第 11 節）。"""
+    return is_generic1(opt) or bool(POSTHOC_COMBO.search(n2(opt)))
+
+
+def qtype2(q):
+    """只看題幹最後一句（最後一個，；：。之後）；最後一句沒有關鍵字才看整個題幹。先判反向。"""
+    stem = q["stem"]
+    last = LAST_CLAUSE.split(stem.rstrip("？?"))[-1]
+    for text in (last, stem):
+        if NEG2.search(text):
+            return "neg"
+        if POS2.search(text):
+            return "pos"
+    return "other"
+
+
+# 目前用哪一版（build 2 時換成第二輪）
+qtype, is_generic = qtype1, is_generic1
 
 
 def load116():
@@ -132,9 +169,41 @@ def classify():
     return 0
 
 
-def judge_rows():
+def classify2():
+    if KEY2.exists():
+        print("CLASSIFY2 ABORT：第二輪驗尺樣本已經抽過了")
+        return 2
+    seen = {k["id"] for k in json.loads(KEY.read_text(encoding="utf-8"))["sample"]}
+    qs = [q for q in load116() if q["id"] not in seen]   # 全部用沒看過的題
+    rnd = random.Random(SEED2)
+    sample = []
+    for c in ("neg", "pos", "other"):
+        pool = sorted([q for q in qs if qtype2(q) == c], key=lambda q: q["id"])
+        sample += [(q, c) for q in rnd.sample(pool, min(PER_CLASS, len(pool)))]
+    rnd.shuffle(sample)
+    # 判斷說明跟第一輪一字不改
+    md = SAMPLE_MD.read_text(encoding="utf-8").split("\n## T01")[0].rstrip("\n").split("\n") + [""]
+    judge, key = ["編號\t判斷（對／錯／其他）"], []
+    for n, (q, c) in enumerate(sample, 1):
+        code = f"T{n:02d}"
+        md += [f"## {code}", q["stem"], ""]
+        judge.append(f"{code}\t")
+        key.append({"code": code, "id": q["id"], "mine": c})
+    SAMPLE2_MD.write_text("\n".join(md), encoding="utf-8")
+    JUDGE2.write_text("\n".join(judge) + "\n", encoding="utf-8")
+    KEY2.write_text(json.dumps({"seed": SEED2, "excluded_round1": len(seen), "sample": key}, ensure_ascii=False, indent=1), encoding="utf-8")
+    for p in (Path(__file__), SAMPLE2_MD, JUDGE2, KEY2):
+        log("stats2-classify", p)
+    allq = load116()
+    cnt = {c: sum(1 for q in allq if qtype2(q) == c) for c in CLS_NAME}
+    overlap = sum(1 for q, _ in sample if q["id"] in seen)
+    print(f"CLASSIFY2 OK：抽了 {len(sample)} 題（排除第一輪 {len(seen)} 題；樣本與第一輪重疊 {overlap} 題）→ {SAMPLE2_MD}｜v2 全體分類 {cnt}")
+    return 0
+
+
+def judge_rows(path=None):
     out = {}
-    for l in JUDGE.read_text(encoding="utf-8").splitlines()[1:]:
+    for l in (path or JUDGE).read_text(encoding="utf-8").splitlines()[1:]:
         if l.strip():
             c = [x.strip() for x in (l.split("\t") + [""])[:2]]
             out[c[0]] = c[1]
@@ -154,12 +223,26 @@ def lock():
     return 0
 
 
-def ruler():
-    lk = logged("stats-lock", JUDGE.name)
-    if not lk or sha(JUDGE) != lk[-1]:
+def lock2():
+    if logged("stats2-lock", JUDGE2.name):
+        print("LOCK2 ABORT：已經鎖定過")
+        return 2
+    bad = [k for k, v in judge_rows(JUDGE2).items() if v not in ("對", "錯", "其他")]
+    if bad:
+        print(f"LOCK2 ABORT：判斷檔有空白或格式不對：{bad}")
+        return 2
+    log("stats2-lock", JUDGE2)
+    print(f"LOCK2 OK：{JUDGE2.name} {sha(JUDGE2)[:12]}…")
+    return 0
+
+
+def ruler(round_=1):
+    judge, keyf, act = (JUDGE, KEY, "stats-lock") if round_ == 1 else (JUDGE2, KEY2, "stats2-lock")
+    lk = logged(act, judge.name)
+    if not lk or sha(judge) != lk[-1]:
         return None
-    key = json.loads(KEY.read_text(encoding="utf-8"))["sample"]
-    J = judge_rows()
+    key = json.loads(keyf.read_text(encoding="utf-8"))["sample"]
+    J = judge_rows(judge)
     m = {"對": "pos", "錯": "neg", "其他": "other"}
     per = {}
     for k in key:
@@ -207,6 +290,10 @@ def robust(qs, field, minimum, part):
 
 
 def build():
+    global qtype, is_generic
+    round_ = 2 if len(sys.argv) > 2 and sys.argv[2] == "2" else 1
+    if round_ == 2:
+        qtype, is_generic = qtype2, is_generic2
     qs = load116()
     n_q = {p: sum(1 for q in qs if q["part"] == p) for p in EXPECT}
     n_opt = sum(len(q["options"]) for q in qs)
@@ -215,14 +302,38 @@ def build():
     if not ok_pop:
         print("STATS ABORT：母體不符，不寫檔")
         return 1
-    rl = ruler()
+    rl = ruler(round_)
     if rl is None:
         print("STATS ABORT：驗尺判斷檔還沒鎖定（或鎖定後被改過）")
         return 2
+    info_r1 = None
+    if round_ == 2:
+        # 參考資訊（不計入驗尺）：第一輪那 60 題用 v2 重分，跟第一輪判斷者一致的比例
+        k1 = json.loads(KEY.read_text(encoding="utf-8"))["sample"]
+        J1 = judge_rows(JUDGE)
+        byid = {q["id"]: q for q in qs}
+        m = {"對": "pos", "錯": "neg", "其他": "other"}
+        hit = sum(1 for k in k1 if m.get(J1.get(k["code"])) == qtype2(byid[k["id"]]))
+        info_r1 = {"agree": hit / len(k1), "n": len(k1)}
+        print(f"參考（不計入驗尺）：第一輪 60 題用 v2 重分，跟第一輪判斷者一致 {info_r1['agree']:.0%}")
     print(f"驗尺（題型）：整體一致 {rl['overall']:.0%}；各類 " + "、".join(f"{CLS_NAME[c][:5]} {r:.0%}（{n} 題）" for c, (r, n) in rl["per"].items())
           + f" → {'過，呈現對／錯那一層' if rl['pass'] else '沒過，只呈現當正解／當誘答'}")
     T = tally(qs, n1)
-    stats = {"population": {"questions": n_q, "options": n_opt}, "ruler": rl, "parts": {}}
+    stats = {"round": round_, "population": {"questions": n_q, "options": n_opt}, "ruler": rl, "ruler_r1_info": info_r1, "parts": {}}
+    if round_ == 2:
+        # 組合型選項修正前後：v1 與 v2 的「當正解」「當誘答」排行前 10 名重疊
+        cmp = {}
+        for part in ("gen", "eth"):
+            for name, field in (("answer", "correct"), ("trap", "distract")):
+                tops = []
+                for g in (is_generic1, is_generic2):
+                    is_generic = g
+                    tops.append([r["key"] for r in rank(tally(qs, n1)[part], field, RANK_MIN)][:ROBUST_K])
+                is_generic = is_generic2
+                cmp[f"{part}-{name}"] = sum(1 for k in tops[0] if k in tops[1]) / len(tops[0]) if tops[0] else None
+        stats["combo_cmp"] = cmp
+        print("組合型選項修正前後（v1 前 10 名有幾成仍在 v2 前 10 名）：" + "、".join(f"{k} {v:.0%}" if v is not None else f"{k} —" for k, v in cmp.items()))
+        T = tally(qs, n1)
     for part in ("gen", "eth"):
         pq = [q for q in qs if q["part"] == part]
         types = {c: sum(1 for q in pq if qtype(q) == c) for c in CLS_NAME}
@@ -260,6 +371,8 @@ def build():
     old = {p: {q["no"]: q for q in json.loads((D / f"ethics-113-{p}.json").read_text(encoding="utf-8"))["questions"]} for p in ("gen", "eth")}
     new = {p: {q["no"]: q for q in json.loads((D / f"ethics-116-{p}.json").read_text(encoding="utf-8"))["questions"]} for p in ("gen", "eth")}
     stats["diff"] = {p: {k: (len(v) if isinstance(v, list) else v) for k, v in diff[p].items()} for p in diff}
+    if round_ == 2 and ROUND1_STATS.exists():
+        stats["round1"] = {k: json.loads(ROUND1_STATS.read_text(encoding="utf-8"))[k] for k in ("ruler",)}
     STATS.write_text(json.dumps(stats, ensure_ascii=False, indent=1, default=list), encoding="utf-8")
     HTML_OUT.write_text(render(stats, diff, old, new), encoding="utf-8")
     print(f"STATS OK：{STATS}；HTML → {HTML_OUT}")
@@ -317,17 +430,25 @@ def render(st, diff, old, new):
         # 問題一
         sec.append('<h3>問題一：看到這句話，它通常是對的還是錯的？</h3>')
         if truth_ok:
-            sec.append('<p class="lead">只算「問哪個對」「問哪個錯」的題目。反向題（問哪個錯）的正解是一句<b>錯的</b>敘述，這裡已經換算成對錯，不是「被選幾次」。</p>')
+            sec.append('<p class="lead">只算「問哪個對」「問哪個錯」的題目。反向題（問哪個錯）的正解是一句<b>錯的</b>敘述，這裡已經換算成對錯，不是「被選幾次」。'
+                       '題目問「何者不是／不得」時，選項常是名詞或行為，這裡的「對／錯」就是「屬於／不屬於題目問的那一類」「可以做／不能做」。</p>')
             sec.append('<h4>常常是「對的」敘述</h4>' + ranked(L["true"], [txt, c_t, c_f], rb.get("true"), None))
             sec.append('<h4>常常是「錯的」敘述</h4>' + ranked(L["false"], [txt, c_f, c_t], rb.get("false"), None))
         else:
             sec.append(f'<p class="warn-line">題型分類的驗尺沒有過（見最後一節），所以這裡不換算對錯，只列「當正解／當誘答」。注意：在問「哪個錯」的題目裡，正解是一句錯的敘述。</p>')
+        cc = st.get("combo_cmp", {})
+        def downgrade(name):
+            v = cc.get(f"{part}-{name}")
+            return (f'<p class="warn-line">第一階段的這份排行受組合型選項影響很大（修正前後前 {ROBUST_K} 名只重疊 {v:.0%}），那一版的可信度要降一級；以這裡的為準。</p>'
+                    if v is not None and v < COMBO_FIX_OK else "")
+        sec.append(downgrade("answer"))
         sec.append('<h4>常常就是答案的說法（當正解 ≥ 3 次）</h4>'
                    + '<p class="warn-line">「當正解」是「被選為答案」，不是「這句話是對的」：題目如果問「何者錯誤」「何者不得」「何者為非」，'
                    + '被選的那句反而是錯的、或是不能做的事。背的時候要連題目一起看，不要只背這句話。</p>'
                    + ranked(L["answer"], [txt, c_cor, c_dis], rb.get("answer"), None))
         # 問題二
         sec.append('<h3>問題二：哪些說法最常被拿來騙人？</h3>')
+        sec.append(downgrade("trap"))
         sec.append('<p class="lead">當誘答（錯誤選項）的次數。</p>' + ranked(L["trap"], [txt, c_dis, c_cor], rb.get("trap"), None))
         # 交叉
         sec.append('<h3>小心：「看到這句就選」會中陷阱的說法</h3>')
@@ -343,6 +464,11 @@ def render(st, diff, old, new):
         # 通用選項
         g = P["generic"]
         sec.append('<h3>「以上皆是」這類通用選項</h3><p class="lead">四選一的基準是 25%。這類選項不進上面的排行。</p>')
+        ya = next((x for x in g if n1(x["text"]) == "以上皆是"), None)
+        if ya and ya["n"] >= RATE_MIN:
+            miss = ya["n"] - ya["correct"]
+            sec.append(f'<p class="warn-line">「以上皆是」出現 {ya["n"]} 次、{pct(ya["correct"], ya["n"])} 是正解——另一面是 {pct(miss, ya["n"])} 不是，'
+                       f'也就是 {miss} 題。可以當傾向，不能當規則：拿不準時才用它偏向，看得懂題目時以內容為準。養成「看到以上皆是就選」的反射，這 {miss} 題會穩定地答錯。</p>')
         if g:
             sec.append(table(g, [("選項", lambda r: esc(r["text"]), False), ("出現", lambda r: r["n"], True), ("當正解", lambda r: r["correct"], True),
                                  ("當正解的比例", lambda r: pct(r["correct"], r["n"]) if r["n"] >= RATE_MIN else "數量不足", True)]))
@@ -384,8 +510,19 @@ def render(st, diff, old, new):
 
     # 方法與限度
     per = "、".join(f"{CLS_NAME[c]} {r:.0%}（{n} 題）" for c, (r, n) in rl["per"].items())
+    r2 = ""
+    if st.get("round") == 2:
+        r1 = st.get("round1", {}).get("ruler")
+        info = st.get("ruler_r1_info") or {}
+        r1txt = (f"第一輪：整體 {r1['overall']:.0%}，其他那一類 {r1['per'].get('other', [0])[0]:.0%}，沒過。" if r1 else "")
+        cmp = st.get("combo_cmp", {})
+        r2 = (f"<li><b>這是第二輪</b>。{r1txt}第二輪把題型分類改成只看題幹最後一句、補上「非、不得、不是」等關鍵字，並用<b>全部沒看過的題</b>重新驗尺（排除第一輪 60 題）。"
+              f"第一輪那 60 題用新規則重分，跟第一輪判斷者一致 {info.get('agree', 0):.0%}——只當參考，不計入，因為拿已知的失敗樣本驗自己的修法一定會過。</li>"
+              "<li>組合型選項的規則補上了「都正確／只 A.正確／(1)及(2)」這類寫法。修正前後排行前 " + str(ROBUST_K) + " 名的重疊："
+              + "、".join(f"{PART[k.split('-')[0]]}{'常是答案' if k.endswith('answer') else '常被拿來騙人'} {v:.0%}" for k, v in cmp.items() if v is not None) + "。</li>")
     method = f"""
 <ul>
+{r2}
 <li>母體：116 年版題庫 {st['population']['questions']['gen']}＋{st['population']['questions']['eth']} 題、{st['population']['options']} 個選項；程式核對讀到的題數等於官方公告。113 年版不進統計。</li>
 <li>只分「金融市場常識」「職業道德」兩部分：題庫 PDF 沒有章節標示，不能依官方章節分。</li>
 <li>「同一個選項」：全形半形統一、去掉空白與標點後完全相同才算同一個（主口徑）；另用「保留標點」的口徑重算一次，比較兩者前 {ROBUST_K} 名的重疊（≥ {ROBUST_OK:.0%} 才寫「一致」）。</li>
@@ -457,4 +594,4 @@ nav a{color:var(--pri)}nav{display:flex;flex-wrap:wrap;gap:6px 14px;font-size:.9
 
 if __name__ == "__main__":
     cmd = sys.argv[1] if len(sys.argv) > 1 else ""
-    sys.exit({"classify": classify, "lock": lock, "build": build}.get(cmd, lambda: (print("用法：classify｜lock｜build"), 2)[1])())
+    sys.exit({"classify": classify, "lock": lock, "build": build, "classify2": classify2, "lock2": lock2}.get(cmd, lambda: (print("用法：classify｜lock｜build [2]｜classify2｜lock2"), 2)[1])())
