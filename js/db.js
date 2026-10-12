@@ -118,3 +118,29 @@ export async function getMeta(k, fallback = null) {
 export async function setMeta(k, v) {
   return put('meta', { k, v });
 }
+
+/** 備份：讀出使用者自己的紀錄（不含匯入的題目）。 */
+export async function exportRecords(metaKeys) {
+  const [attempts, progress, mistakes] = await Promise.all(['attempts', 'progress', 'mistakes'].map(s => getAll(s)));
+  const meta = {};
+  for (const k of metaKeys) { const v = await getMeta(k); if (v !== null) meta[k] = v; }
+  return { attempts, progress, mistakes, meta };
+}
+
+/** 還原：同一筆交易裡清掉三個紀錄 store 與指定的 meta，再寫入備份的內容（整份成功或整份不動）。匯入的題目不動。 */
+// 跟 replaceUserQuestions 同一個注意事項：交易進行中不 await。
+export async function restoreRecords(data, metaKeys) {
+  const db = await openDB();
+  const tx = db.transaction(['attempts', 'progress', 'mistakes', 'meta'], 'readwrite');
+  for (const s of ['attempts', 'progress', 'mistakes']) {
+    const st = tx.objectStore(s);
+    st.clear();
+    for (const r of data[s]) st.put(r);
+  }
+  const mt = tx.objectStore('meta');
+  for (const k of metaKeys) {
+    if (data.meta[k] !== undefined) mt.put({ k, v: data.meta[k] });
+    else mt.delete(k);
+  }
+  return done(tx);
+}

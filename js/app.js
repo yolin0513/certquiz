@@ -680,7 +680,80 @@ function persistCard(s) {
       h('p', { text: `這個瀏覽器${s.why && s.why.startsWith('查詢') ? '在查詢時出錯' : '不支援查詢這件事'}，App 無法確認紀錄會不會被自動清掉。請不要假設它是安全的。` }),
       h('p', { text: home })],
   }[s.state];
-  return h('section', { class: 'card', id: 'persist' }, h('h2', { text: '這台裝置的紀錄' }), ...body);
+  return h('section', { class: 'card', id: 'persist' }, h('h2', { text: '這台裝置的紀錄' }), ...body,
+    h('p', { class: 'muted', text: '不管是哪一種狀態，都建議偶爾用下面的「備份與還原」匯出一份備份檔。' }));
+}
+
+// ---------------------------------------------------------------- 備份與還原（U4）
+// 換手機、或資料被清掉時用。只備份使用者自己的紀錄；題目另外用匯入包匯入（備份檔裡沒有題目文字）。
+// 存檔分兩步：先「準備」（讀資料庫），再按「儲存」——iPhone 的分享面板要在使用者剛按下的那一下叫出來，中間不能先等資料庫。
+function stamp(ms) {
+  const d = new Date(ms), p = n => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
+}
+
+async function backupCard() {
+  const cur = L.backupSummary(await DB.exportRecords(L.BACKUP_META_KEYS));
+  const out = h('div', { class: 'status' });
+  const countsText = x => `作答紀錄 ${x.attempts} 筆、每題進度 ${x.progress} 題、錯題 ${x.mistakes} 題`;
+  const prep = h('button', { class: 'btn', type: 'button', id: 'backup-prepare', text: '準備備份檔', onclick: async () => {
+    prep.disabled = true;
+    const rec = await DB.exportRecords(L.BACKUP_META_KEYS);
+    const now = Date.now();
+    const text = JSON.stringify(L.makeBackup(rec, now, 'CertQuiz'));
+    const name = `certquiz-備份-${stamp(now).replace(/[-: ]/g, '').replace(/^(\d{8})(\d{4})$/, '$1-$2')}.json`;
+    const file = new File([text], name, { type: 'application/json' });
+    const canShare = !!(navigator.canShare && navigator.canShare({ files: [file] }));
+    const save = h('button', { class: 'btn primary', type: 'button', id: 'backup-save', text: canShare ? '儲存備份檔（分享到「檔案」）' : '下載備份檔', onclick: async () => {
+      if (canShare) {
+        try { await navigator.share({ files: [file], title: name }); } catch (e) { if (e && e.name !== 'AbortError') fill(note, h('p', { class: 'ng', text: `沒有存成：${e.message}` })); }
+      } else {
+        const url = URL.createObjectURL(file);
+        const a = h('a', { href: url, download: name });
+        document.body.append(a); a.click(); a.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 60000);
+      }
+    } });
+    const note = h('div', {});
+    fill(out, h('p', { text: `備份檔已準備好：${name}（${countsText(L.backupSummary(rec))}，${Math.ceil(text.length / 1024)} KB）。` }),
+      h('p', { class: 'muted', text: canShare ? 'iPhone：按下面的按鈕，在分享面板選「儲存到檔案」，或傳到電腦。' : '按下面的按鈕下載，存到你找得到的地方（換手機時要用）。' }),
+      save, note);
+  } });
+  const input = h('input', { type: 'file', id: 'backup-file', accept: '.json,application/json' });
+  const rout = h('div', { class: 'status' });
+  input.addEventListener('change', async () => {
+    const f = input.files[0];
+    if (!f) return;
+    let obj;
+    try { obj = JSON.parse(await f.text()); } catch { fill(rout, h('p', { class: 'ng', text: '這個檔案不是正確的 JSON。' })); return; }
+    const r = L.validateBackup(obj);
+    if (!r.ok) {
+      fill(rout, h('p', { class: 'ng', text: `不能還原：${r.errors.length} 個問題（什麼都沒有改）` }), h('ul', {}, r.errors.slice(0, 10).map(e => h('li', { text: e }))));
+      return;
+    }
+    const bk = L.backupSummary(r.data);
+    const now = L.backupSummary(await DB.exportRecords(L.BACKUP_META_KEYS));
+    const newer = now.lastTs > bk.lastTs;
+    const go = h('button', { class: 'btn primary', type: 'button', id: 'backup-restore', text: '還原（換掉這台裝置目前的紀錄）', onclick: async () => {
+      go.disabled = true;
+      await DB.restoreRecords(r.data, L.BACKUP_META_KEYS);
+      // 還原後重新讀一次、跟備份檔核對筆數：寫進去的跟檔案裡的要一樣多，才說「還原完成」
+      const after = L.backupSummary(await DB.exportRecords(L.BACKUP_META_KEYS));
+      const same = after.attempts === bk.attempts && after.progress === bk.progress && after.mistakes === bk.mistakes;
+      fill(rout, same ? h('p', { class: 'ok', id: 'backup-done', text: `還原完成，核對過筆數：${countsText(after)}，跟備份檔一樣。` })
+        : h('p', { class: 'ng', text: `還原後的筆數跟備份檔不一樣（還原後：${countsText(after)}；備份檔：${countsText(bk)}）。請不要刪掉備份檔，把這段畫面傳給我們。` }),
+        h('p', { class: 'muted', text: '題目不在備份裡：如果這台裝置還沒匯入題目，請到上面的「匯入題目」匯入，紀錄才對得上題目。' }));
+    } });
+    fill(rout, h('p', { text: `備份時間 ${stamp(Date.parse(obj.created))}：${countsText(bk)}。` }),
+      h('p', { text: `這台裝置目前：${countsText(now)}。` }),
+      newer ? h('p', { class: 'ng', id: 'backup-newer', text: `這台裝置上有比備份更新的作答（最新一筆 ${stamp(now.lastTs)}，備份裡最新的是 ${bk.lastTs ? stamp(bk.lastTs) : '沒有'}）。還原後，這些較新的紀錄會不見。` }) : null,
+      h('p', { class: 'muted', text: '還原會整份換掉這台裝置上的作答紀錄、錯題、讀書與模擬考紀錄；匯入的題目不動。' }), go);
+  });
+  return h('section', { class: 'card', id: 'backup' }, h('h2', { text: '備份與還原' }),
+    h('p', { text: '換手機、或瀏覽器資料被清掉時，用備份檔把作答紀錄、錯題、讀書與模擬考紀錄還原回來。' }),
+    h('p', { class: 'muted', text: `備份檔只有你的紀錄和題號，沒有題目文字；題目要另外用匯入包匯入。這台裝置目前：${countsText(cur)}。` }),
+    h('h3', { text: '匯出' }), prep, out,
+    h('h3', { text: '還原' }), input, rout);
 }
 
 async function settingsView(gen) {
@@ -726,9 +799,10 @@ async function settingsView(gen) {
       counts.length ? h('ul', {}, counts) : h('p', { class: 'muted', text: '目前沒有匯入的題目。' }),
       input, status),
     persistCard(await storagePromise),
+    await backupCard(),
     h('section', { class: 'card' }, h('h2', { text: '關於' }),
       h('p', { text: '這個網站只有練習功能。作答紀錄、錯題、匯入的題目都只存在你這支手機的瀏覽器裡；網站不收集任何資料。' }),
-      h('p', { class: 'muted', text: '換手機或清除瀏覽器資料後，要重新匯入題目。' })));
+      h('p', { class: 'muted', text: '換手機或清除瀏覽器資料後，要重新匯入題目；作答紀錄可以用上面的備份檔還原。' })));
 }
 
 // ---------------------------------------------------------------- 路由

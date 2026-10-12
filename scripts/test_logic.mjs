@@ -334,5 +334,41 @@ if (existsSync(real)) {
   }
 }
 
+// 備份與還原（U4）：來回一趟內容不變；壞檔整份不收、點名；只收認得的 meta（考點清單跟著匯入包走，不進備份）
+{
+  const rec = {
+    attempts: [{ n: 1, cert: 'bic', qid: 'bic-law-t47-001', chosen: 2, correct: true, mode: 'practice', ts: 1000, studied: false },
+      { n: 2, cert: 'ethics', qid: 'ethics-116-gen-001', chosen: 4, correct: false, mode: 'exam', ts: 3000 }],
+    progress: [{ qid: 'bic-law-t47-001', cert: 'bic', seen: 1, correct: 1, last: true, ts: 1000 }],
+    mistakes: [{ qid: 'ethics-116-gen-001', cert: 'ethics', streak: 0, ts: 3000 }],
+    meta: { studied: { 'bic:point:P001': 1 }, examHistory: [{ cert: 'bic', score: 70 }], 'points:bic': [{ id: 'P001' }] },
+  };
+  const b = L.makeBackup(rec, Date.UTC(2026, 9, 12), 'CertQuiz');
+  const back = L.validateBackup(JSON.parse(JSON.stringify(b)));
+  check('備份：來回一趟（轉成文字再讀回來）通過檢查、三類紀錄與讀書／模擬考紀錄一字不差',
+    back.ok && JSON.stringify(back.data.attempts) === JSON.stringify(rec.attempts) && JSON.stringify(back.data.progress) === JSON.stringify(rec.progress)
+    && JSON.stringify(back.data.mistakes) === JSON.stringify(rec.mistakes) && JSON.stringify(back.data.meta) === JSON.stringify({ studied: rec.meta.studied, examHistory: rec.meta.examHistory }),
+    back.errors.join('；'));
+  check('備份：考點清單（points:*）不進備份——它跟著匯入包走', !('points:bic' in b.meta));
+  const s = L.backupSummary(rec);
+  check(`備份摘要：作答 ${s.attempts}、各證照 ${JSON.stringify(s.certs)}、最新一筆 ${s.lastTs}`, s.attempts === 2 && s.certs.bic === 1 && s.certs.ethics === 1 && s.lastTs === 3000);
+  const bad = [
+    ['拿題目匯入包來還原', { format: 'certquiz-import', version: 1 }, '匯入包，不是備份檔'],
+    ['版本不對', { ...b, version: 2 }, '版本'],
+    ['檔案被截斷（筆數對不上）', { ...b, attempts: b.attempts.slice(0, 1) }, '筆數對不上'],
+    ['作答紀錄的選項不是 1～4', { ...b, attempts: [{ ...b.attempts[0], chosen: 7 }, b.attempts[1]] }, '作答紀錄第 1 筆'],
+    ['作答紀錄缺題號', { ...b, attempts: [{ ...b.attempts[0], qid: '' }, b.attempts[1]] }, '作答紀錄第 1 筆'],
+    ['作答編號重複', { ...b, attempts: [b.attempts[0], { ...b.attempts[1], n: 1 }] }, '編號重複'],
+    ['錯題本同一題出現兩次', { ...b, counts: { ...b.counts, mistakes: 2 }, mistakes: [b.mistakes[0], b.mistakes[0]] }, '重複'],
+    ['答對次數比作答次數多', { ...b, progress: [{ ...b.progress[0], correct: 5 }] }, '作答次數'],
+    ['meta 有不認得的項目', { ...b, meta: { ...b.meta, 'points:bic': [] } }, '不認得的項目'],
+    ['不是物件', [], '不是 JSON 物件'],
+  ];
+  for (const [d, x, why] of bad) {
+    const r = L.validateBackup(JSON.parse(JSON.stringify(x)));
+    check(`備份：${d} → 整份不收、訊息點名「${why}」`, !r.ok && !r.data && r.errors.some(e => e.includes(why)), r.errors.join('；'));
+  }
+}
+
 console.log(fails ? `TEST-LOGIC FAILED：${fails} 項不符` : 'TEST-LOGIC OK：全部符合');
 process.exit(fails ? 1 : 0);

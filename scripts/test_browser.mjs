@@ -1077,6 +1077,109 @@ async function persistTest(browser, base) {
   }
 }
 
+// ---------------------------------------------------------------- 二之九之二、備份與還原（U4）
+// 來回一趟：A 裝置練題、讀書 → 匯出備份檔 → 全新的 B 裝置（另一個瀏覽器設定檔）匯入題目、先練一題 → 還原 → B 的紀錄＝A 的紀錄。
+// iPhone 走分享面板（navigator.share），桌機走下載；兩條路都跑。
+async function dumpRecords(page) {
+  return page.evaluate(() => new Promise((resolve, reject) => {
+    const req = indexedDB.open('certquiz');
+    req.onsuccess = () => {
+      const tx = req.result.transaction(['attempts', 'progress', 'mistakes', 'meta'], 'readonly');
+      const all = s => new Promise(r => { const q = tx.objectStore(s).getAll(); q.onsuccess = () => r(q.result); });
+      Promise.all(['attempts', 'progress', 'mistakes', 'meta'].map(all)).then(([a, p, m, meta]) => {
+        const sort = (xs, k) => [...xs].sort((x, y) => String(x[k]).localeCompare(String(y[k])));
+        resolve({ attempts: a, progress: sort(p, 'qid'), mistakes: sort(m, 'qid'),
+          meta: Object.fromEntries(meta.filter(x => ['studied', 'examHistory'].includes(x.k)).map(x => [x.k, x.v])) });
+      });
+    };
+    req.onerror = () => reject(req.error);
+  }));
+}
+
+async function backupTest(browser, base) {
+  console.log('== 二之九之二、備份與還原：匯出 → 另一台裝置還原，紀錄一字不差；壞檔不動任何東西');
+  const pack = JSON.parse(readFileSync(PACK, 'utf-8'));
+  const dir = mkdtempSync(join(tmpdir(), `certquiz-backup-${process.pid}-`));
+  const errors = [];
+  const ctxA = await browser.createBrowserContext();
+  const ctxB = await browser.createBrowserContext();
+  const ctxC = await browser.createBrowserContext();
+  try {
+    // A：練 10 題、看一次讀書頁（產生讀書紀錄），用「分享」那條路匯出（攔下分享的檔案內容）
+    const a = await newPage(ctxA, errors);
+    await a.evaluateOnNewDocument(() => {
+      Object.defineProperty(navigator, 'canShare', { value: () => true, configurable: true });
+      Object.defineProperty(navigator, 'share', { value: async d => { window.__shared = { name: d.files[0].name, text: await d.files[0].text() }; }, configurable: true });
+    });
+    await gotoView(a, base + '#/');
+    await waitText(a, '證照題庫練習');
+    await importPack(a, PACK, pack.counts.active);
+    await practiceRound(a, 10);
+    await gotoView(a, base + '#/study?cert=bic');
+    await a.waitForSelector('.study-q');
+    const dumpA = await dumpRecords(a);
+    await gotoView(a, base + '#/settings');
+    await (await a.waitForSelector('#backup-prepare')).click();
+    await (await a.waitForSelector('#backup-save')).click();
+    await a.waitForFunction(() => window.__shared, { timeout: 5000 });
+    const shared = await a.evaluate(() => window.__shared);
+    const obj = JSON.parse(shared.text);
+    check(`備份（分享那條路）：檔名 ${shared.name}；內容是備份格式、作答 ${obj.attempts.length} 筆＝這台裝置的 ${dumpA.attempts.length} 筆；沒有任何題目文字`,
+      /^certquiz-備份-\d{8}-\d{4}\.json$/.test(shared.name) && obj.format === 'certquiz-backup' && obj.attempts.length === dumpA.attempts.length && dumpA.attempts.length >= 10
+      && !pack.questions.some(q => shared.text.includes(q.stem)) && !('userQuestions' in obj), shared.text.slice(0, 120));
+    const file = join(dir, shared.name);
+    writeFileSync(file, shared.text);
+
+    // B：全新裝置，匯入題目、先練 10 題（比備份新的紀錄）→ 選備份檔 → 要警告「有比備份更新的作答」→ 還原 → 紀錄＝A
+    const b = await newPage(ctxB, errors);
+    await gotoView(b, base + '#/');
+    await waitText(b, '證照題庫練習');
+    await importPack(b, PACK, pack.counts.active);
+    await practiceRound(b, 10);
+    const before = await dumpRecords(b);
+    // 先拿題目匯入包當備份檔選：要被擋下、什麼都不改
+    await gotoView(b, base + '#/settings');
+    await (await b.waitForSelector('#backup-file')).uploadFile(PACK);
+    await waitText(b, '不能還原');
+    const untouched = JSON.stringify(await dumpRecords(b)) === JSON.stringify(before);
+    const msg = await b.$eval('#backup', e => e.innerText);
+    check('還原：選到題目匯入包 → 擋下、說明「這是題目的匯入包，不是備份檔」、紀錄一筆都沒動', msg.includes('這是題目的匯入包，不是備份檔') && untouched);
+    await gotoView(b, base + '#/');
+    await gotoView(b, base + '#/settings');
+    await (await b.waitForSelector('#backup-file')).uploadFile(file);
+    const warn = await b.waitForSelector('#backup-newer').then(e => e.evaluate(x => x.textContent)).catch(() => '');
+    check(`還原前：B 有 ${before.attempts.length} 筆比備份新的作答 → 畫面警告還原後會不見`, before.attempts.length >= 1 && warn.includes('還原後，這些較新的紀錄會不見'), warn);
+    await (await b.waitForSelector('#backup-restore')).click();
+    const done = await b.waitForSelector('#backup-done').then(e => e.evaluate(x => x.textContent)).catch(() => '');
+    const dumpB = await dumpRecords(b);
+    const same = k => JSON.stringify(dumpB[k]) === JSON.stringify(dumpA[k]);
+    check(`還原：B 的作答紀錄、每題進度、錯題本、讀書與模擬考紀錄＝A（一字不差）；畫面寫「核對過筆數」`,
+      same('attempts') && same('progress') && same('mistakes') && same('meta') && done.includes('核對過筆數'),
+      ['attempts', 'progress', 'mistakes', 'meta'].filter(k => !same(k)).join('、') + `｜${done}`);
+    const statsB = await (async () => { await gotoView(b, base + '#/stats?cert=bic'); await b.waitForSelector('table'); return b.$eval('#view', e => e.innerText); })();
+    check('還原後：統計頁讀得到還原的紀錄（不是 0）', !statsB.includes('已作答 0 次') && errors.length === 0, errors.join('；'));
+
+    // C：沒有分享功能的瀏覽器（桌機）→ 走下載，檔案真的存下來而且讀得回來
+    const c = await newPage(ctxC, errors);
+    await c.evaluateOnNewDocument(() => { Object.defineProperty(navigator, 'canShare', { value: undefined, configurable: true }); });
+    const cdp = await c.createCDPSession();
+    const dl = join(dir, 'dl');
+    mkdirSync(dl);
+    await cdp.send('Page.setDownloadBehavior', { behavior: 'allow', downloadPath: dl });
+    await gotoView(c, base + '#/settings');
+    await (await c.waitForSelector('#backup-prepare')).click();
+    await (await c.waitForSelector('#backup-save')).click();
+    let got = [];
+    for (let i = 0; i < 50 && !got.length; i++) { await sleep(100); got = readdirSync(dl).filter(f => f.endsWith('.json')); }
+    const dobj = got.length ? JSON.parse(readFileSync(join(dl, got[0]), 'utf-8')) : null;
+    check(`備份（下載那條路）：按鈕寫「下載備份檔」、檔案存下來了（${got[0] || '沒有'}）、是備份格式`,
+      (await c.$eval('#backup-save', e => e.textContent)) === '下載備份檔' && !!dobj && dobj.format === 'certquiz-backup');
+  } finally {
+    await ctxA.close(); await ctxB.close(); await ctxC.close();
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
 // ---------------------------------------------------------------- 二之十、金融市場常識與職業道德：考試範圍（116 年版）與範圍外（113 年版刪除／改過）分開
 const ETHICS_PACK = join(ROOT, 'data', 'local', 'import', 'ethics-匯入包.json');
 async function importEthics(page) {
@@ -1332,6 +1435,7 @@ async function main() {
     await importStudyTest(browser, base);
     await lookTest(browser, base, process.env.CERTQUIZ_SHOTS || '');
     await persistTest(browser, base);
+    await backupTest(browser, base);
     await ethicsTest(browser, base);
     await missingBankTest(browser);
     check(`全畫面掃描：整個測試期間所有頁面都沒有出現 null／undefined／NaN`, BAD_TEXT.length === 0,
@@ -1342,7 +1446,7 @@ async function main() {
     await browser.close();
     proc.kill();
     rmSync(site, { recursive: true, force: true });
-    const left = await leftovers([`certquiz-site-${process.pid}-`, `certquiz-chrome-${process.pid}-`]);
+    const left = await leftovers([`certquiz-site-${process.pid}-`, `certquiz-chrome-${process.pid}-`, `certquiz-backup-${process.pid}-`]);
     if (left.length) { console.log(`✗ 暫存目錄沒清掉：${left.join('、')}`); code = 1; }
   }
   console.log(code ? `TEST-BROWSER FAILED：${fails} 項不符${failed.length ? '（' + failed.join('｜') + '）' : '（暫存目錄沒清掉）'}` : 'TEST-BROWSER OK：驗尺 5 項＋實測＋端到端突變全部符合');

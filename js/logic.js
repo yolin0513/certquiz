@@ -375,3 +375,74 @@ export async function requestPersistence(storage) {
     return { state: 'unsupported', why: `查詢時出錯：${e && e.message ? e.message : e}` };
   }
 }
+
+// ---------------------------------------------------------------- 備份與還原（U4，2026-10-12）
+// 備份的是「使用者自己的紀錄」：每次作答、每題進度、錯題本、讀書紀錄、模擬考紀錄。
+// 不含題目（題目另外用匯入包匯入；備份檔裡只有題號，沒有任何題目文字）。
+export const BACKUP_FORMAT = 'certquiz-backup';
+export const BACKUP_VERSION = 1;
+export const BACKUP_META_KEYS = ['studied', 'examHistory'];
+const BACKUP_STORES = ['attempts', 'progress', 'mistakes'];
+
+/** 從各 store 的內容組成備份物件；counts 讓還原時核對檔案沒有被截斷。 */
+export function makeBackup({ attempts, progress, mistakes, meta }, now, appVersion) {
+  const m = {};
+  for (const k of BACKUP_META_KEYS) if (meta && meta[k] !== undefined) m[k] = meta[k];
+  return { format: BACKUP_FORMAT, version: BACKUP_VERSION, created: new Date(now).toISOString(), app: appVersion || '',
+    counts: { attempts: attempts.length, progress: progress.length, mistakes: mistakes.length },
+    attempts, progress, mistakes, meta: m };
+}
+
+/** 摘要：各類筆數、各證照的作答次數、最新一筆作答的時間（用來警告「這台裝置上有比備份更新的紀錄」）。 */
+export function backupSummary({ attempts, progress, mistakes }) {
+  const certs = {};
+  for (const a of attempts) certs[a.cert] = (certs[a.cert] || 0) + 1;
+  return { attempts: attempts.length, progress: progress.length, mistakes: mistakes.length, certs,
+    lastTs: attempts.reduce((t, a) => Math.max(t, a.ts || 0), 0) };
+}
+
+const isStr = x => typeof x === 'string' && x.length > 0;
+const isNum = x => typeof x === 'number' && Number.isFinite(x);
+
+/**
+ * 驗證備份檔。回傳 { ok, errors[], data }。任何一筆不合格就整份不收（跟匯入包同一個原則：
+ * 部分還原會讓使用者以為紀錄是完整的）。
+ */
+export function validateBackup(obj) {
+  const errors = [];
+  if (!obj || typeof obj !== 'object' || Array.isArray(obj)) return { ok: false, errors: ['檔案不是 JSON 物件'] };
+  if (obj.format !== BACKUP_FORMAT) errors.push(obj.format === 'certquiz-import' ? '這是題目的匯入包，不是備份檔（題目請到「匯入題目」匯入）' : `不是本 App 的備份檔（format 應為 ${BACKUP_FORMAT}）`);
+  if (obj.version !== BACKUP_VERSION) errors.push(`備份檔版本 ${obj.version} 不支援（只支援 ${BACKUP_VERSION}）`);
+  if (!isStr(obj.created) || Number.isNaN(Date.parse(obj.created))) errors.push('備份時間格式不對');
+  for (const s of BACKUP_STORES) {
+    if (!Array.isArray(obj[s])) { errors.push(`缺少 ${s}`); continue; }
+    if (!obj.counts || obj.counts[s] !== obj[s].length) errors.push(`${s} 筆數對不上（檔案寫 ${obj.counts && obj.counts[s]}、實際 ${obj[s].length}）——檔案可能不完整`);
+  }
+  if (errors.length) return { ok: false, errors };
+  const keys = new Set();
+  obj.attempts.forEach((a, i) => {
+    const tag = `作答紀錄第 ${i + 1} 筆`;
+    if (!a || !isStr(a.cert) || !isStr(a.qid) || !isNum(a.ts) || typeof a.correct !== 'boolean' || !isStr(a.mode)) errors.push(`${tag}：格式不對`);
+    else if (!(isNum(a.chosen) && [1, 2, 3, 4].includes(a.chosen))) errors.push(`${tag}：選項必須是 1～4`);
+    if (a && a.studied !== undefined && typeof a.studied !== 'boolean') errors.push(`${tag}：studied 格式不對`);
+    if (a && a.n !== undefined) { if (!isNum(a.n) || keys.has(a.n)) errors.push(`${tag}：編號重複或格式不對`); keys.add(a.n); }
+  });
+  for (const s of ['progress', 'mistakes']) {
+    const seen = new Set();
+    obj[s].forEach((r, i) => {
+      const tag = `${s === 'progress' ? '每題進度' : '錯題本'}第 ${i + 1} 筆`;
+      if (!r || !isStr(r.qid) || !isStr(r.cert)) { errors.push(`${tag}：格式不對`); return; }
+      if (seen.has(r.qid)) errors.push(`${tag}：題號 ${r.qid} 重複`);
+      seen.add(r.qid);
+      if (s === 'progress' && !(isNum(r.seen) && isNum(r.correct) && r.correct <= r.seen)) errors.push(`${tag}：作答次數格式不對`);
+    });
+  }
+  const meta = obj.meta || {};
+  if (typeof meta !== 'object' || Array.isArray(meta)) errors.push('meta 格式不對');
+  else {
+    for (const k of Object.keys(meta)) if (!BACKUP_META_KEYS.includes(k)) errors.push(`meta 有不認得的項目：${k}`);
+    if (meta.studied !== undefined && (typeof meta.studied !== 'object' || Array.isArray(meta.studied))) errors.push('讀書紀錄格式不對');
+    if (meta.examHistory !== undefined && !Array.isArray(meta.examHistory)) errors.push('模擬考紀錄格式不對');
+  }
+  return errors.length ? { ok: false, errors } : { ok: true, errors, data: { attempts: obj.attempts, progress: obj.progress, mistakes: obj.mistakes, meta } };
+}
