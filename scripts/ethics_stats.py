@@ -693,6 +693,7 @@ nav a{color:var(--pri)}nav{display:flex;flex-wrap:wrap;gap:6px 14px;font-size:.9
 .posthoc{display:block;font-size:.82rem;color:var(--warn)}
 """
     unanswered = ""
+    slow = ""
     if st.get("round") == 3 and not truth_ok:
         r1 = (st.get("round1") or {}).get("ruler")
         r2r = (st.get("round2") or {}).get("ruler")
@@ -714,7 +715,18 @@ nav a{color:var(--pri)}nav{display:flex;flex-wrap:wrap;gap:6px 14px;font-size:.9
             mc_html = ('<p><b>第四種做法也停了</b>：關鍵字分不出來，就改讓模型逐題讀懂再分。但同一個模型對同一批題連自己都對不上——'
                        '分得不一樣的那幾題，都卡在規格本身的邊界：「何者不是應注意的事項」算屬不屬於某類還是問錯、「應拒絕哪一個」「最宜採用哪種方法」算問做法還是問名詞、'
                        '「內容應包括哪些」算屬類還是問對。也就是說，<b>這一步卡住的不是分類工具，是「題目在問對還是問錯」對一部分題目本來就沒有唯一答案</b>。'
-                       '事先承諾這是最後一種方法；不再換方法、不再調門檻、不再改規格。</p>')
+                       '事先承諾這是最後一種方法；不再換方法、不再調門檻、不再改規格（修規格的邊界再重跑，也算繼續這條路）。</p>')
+            # 對讀者的推論（docs/L 第 16 節）：問法本身有歧義的題，不能靠規則，只能讀完。例子取自 ④ 分得不一樣的題與分類者回報的難題。
+            # 例子含題庫原文的問句，只放本機（data/local/sfi/slow-examples.json：[問法 HTML, 例子, 為什麼要慢讀]）；沒有檔就不出這一節
+            exf = D / "slow-examples.json"
+            ex = json.loads(exf.read_text(encoding="utf-8"))["examples"] if exf.exists() else []
+            rows_ex = "".join(f"<tr><td>{a}</td><td>{esc(b)}</td><td>{esc(c)}</td></tr>" for a, b, c in ex)
+            slow = '' if not ex else ('<section id="slow"><h2>這幾種問法要特別慢讀</h2>'
+                    '<p class="keynote">上面那一節查出來的根因，對你考試直接有用：有一部分題目連「在問對還是問錯」都有兩種讀法，'
+                    '同一個模型讀兩次都會讀出不同結果。<b>碰到這類題，沒有規則可以套，只能把題目讀完。</b></p>'
+                    '<p class="lead">下面是分類時最常讀出兩種結果的問法。例子是題庫裡的寫法（只節錄問句）。</p>'
+                    '<div class="tw"><table><thead><tr><th>問法</th><th>例子</th><th>為什麼要慢讀</th></tr></thead><tbody>' + rows_ex + '</tbody></table></div>'
+                    '<p class="muted">這不是完整清單：只是分類時被認出來的幾種。沒列在這裡的題，也可能有同樣的問題。</p></section>')
         intro = ("試過三輪關鍵字、再換成模型逐題讀題，四次都沒過，所以不換算。這條路已經走完，不再試。" if mc_html
                  else "試過三輪，三輪都沒過，所以不換算。這是最後一輪，不再試。")
         unanswered = (f'<section id="unanswered" class="alert"><h2>這份重點整理有一個它答不了的問題</h2>'
@@ -739,7 +751,7 @@ nav a{color:var(--pri)}nav{display:flex;flex-wrap:wrap;gap:6px 14px;font-size:.9
 <meta name="robots" content="noindex"><title>金融常識與道德重點整理</title><style>{css}</style></head><body><main>
 <h1>金融市場常識與職業道德・重點整理</h1>
 <p class="muted">依證基會公告的 116 年版題庫（2027 年 1 月 1 日起適用）由程式算出；產生時間 {esc(gen_at)}。只放在你自己的裝置，不要轉貼。</p>
-<nav>{'<a href="#unanswered">答不了的問題</a>' if unanswered else ''}<a href="#how">怎麼讀</a><a href="#facts">考試怎麼考</a><a href="#scope">各科範圍</a><a href="#types">題型</a><a href="#gen">金融市場常識</a><a href="#eth">職業道德</a><a href="#diff">兩版差異</a><a href="#method">方法與限度</a></nav>
+<nav>{'<a href="#unanswered">答不了的問題</a>' if unanswered else ''}{'<a href="#slow">要慢讀的問法</a>' if slow else ''}<a href="#how">怎麼讀</a><a href="#facts">考試怎麼考</a><a href="#scope">各科範圍</a><a href="#types">題型</a><a href="#gen">金融市場常識</a><a href="#eth">職業道德</a><a href="#diff">兩版差異</a><a href="#method">方法與限度</a></nav>
 <section id="how"><h2>這份怎麼讀</h2>
 <p class="keynote">每一節都在回答一個問題：「看到這句話，它通常是對的還是錯的？」「哪些說法最常被拿來騙人？」數字是這句話在 116 年版題庫裡出現的次數。</p>
 <p>題庫只有字面統計：同一個意思換個說法，不會算在一起。所以「沒出現在排行裡」不代表不重要，只代表這句話沒有<b>一字不差</b>地重複出現很多次。</p>
@@ -751,7 +763,7 @@ nav a{color:var(--pri)}nav{display:flex;flex-wrap:wrap;gap:6px 14px;font-size:.9
 <p><b>金融市場常識（50%）</b>：金融體系、證券期貨市場、銀行實務、信託實務、貨幣市場實務、保險實務</p>
 <p><b>職業道德（50%）</b>：業務推廣與招攬、受託執行業務、告知義務與通知、誠實信用原則、有關利益衝突、保密原則、遵守法律規範與自律</p>
 <p class="muted">題庫 PDF 沒有標每題屬於哪一章，所以下面的統計只分這兩部分。</p></section>
-{unanswered}
+{unanswered}{slow}
 <section id="types"><h2>各科常見的題型</h2>{types_html}
 <p class="muted">「問哪個錯」的題目，正解是一句錯的敘述——背答案時要看清楚題目問的是對還是錯。</p></section>
 {''.join(parts_html)}
