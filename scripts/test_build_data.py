@@ -53,15 +53,19 @@ REVIEW = {"groups": [{"ids": ["bic-law-t48-003", "bic-law-t49-002"], "verdict": 
 POINT_FILES = {"bic/a.txt": GOOD_BIC_40, "bic/b.txt": GOOD_BIC_47, "bic/c.txt": BIC_MORE}
 
 
-def run_case(desc, public_files, local_files, mode, expect_ok, expect_ids=(), check=None, study=None):
+def run_case(desc, public_files, local_files, mode, expect_ok, expect_ids=(), check=None, study=None, law=None):
     tmp = Path(tempfile.mkdtemp(prefix="certquiz-build-"))
-    saved = (B.SRC, B.OUT, B.LOCAL_SRC, B.LOCAL_OUT, B.STUDY_DIR)
+    saved = (B.SRC, B.OUT, B.LOCAL_SRC, B.LOCAL_OUT, B.STUDY_DIR, B.LAW_FLAGS)
     try:
         # 考點檔也要指到暫存目錄：不然測試會讀到真正的 data/local/study/points.json
         (tmp / "study").mkdir()
         for name, obj in (study or {}).items():
             (tmp / "study" / name).write_text(json.dumps(obj, ensure_ascii=False), encoding="utf-8")
         B.STUDY_DIR = tmp / "study"
+        # 法規修正標示也一樣：不然會讀到真正的 data/local/law/flags.json
+        B.LAW_FLAGS = tmp / "law-flags.json"
+        if law is not None:
+            B.LAW_FLAGS.write_text(json.dumps(law, ensure_ascii=False), encoding="utf-8")
         (tmp / "src").mkdir()
         (tmp / "src" / "certs.json").write_text(REAL_CERTS, encoding="utf-8")
         for rel, text in public_files.items():
@@ -88,7 +92,7 @@ def run_case(desc, public_files, local_files, mode, expect_ok, expect_ids=(), ch
                 print(f"    {e}")
         return ok
     finally:
-        B.SRC, B.OUT, B.LOCAL_SRC, B.LOCAL_OUT, B.STUDY_DIR = saved
+        B.SRC, B.OUT, B.LOCAL_SRC, B.LOCAL_OUT, B.STUDY_DIR, B.LAW_FLAGS = saved
         shutil.rmtree(tmp, ignore_errors=False)
 
 
@@ -108,6 +112,23 @@ def points_check(tmp):
             and pack["counts"]["points"] == 2
             and by["bic-law-t49-002"].get("point") == "P001" and by["bic-law-t47-001"].get("point") == "P002"
             and "point" not in by["bic-law-t46-005"] and "point" not in by["bic-law-t48-006"])
+
+
+LAW_OK = {"checked": "2026-10-08", "flags": {
+    "bic-law-t47-001": {"status": "amended", "laws": [{"name": "甲辦法", "known": True, "after": ["2026-05-06"]}]},
+    "bic-law-t48-003": {"status": "unchanged", "laws": [{"name": "乙法", "known": True, "after": []}]},
+    "bic-law-t49-002": {"status": "none", "laws": []},
+    "bic-law-t46-005": {"status": "none", "laws": []},
+    "bic-law-t48-006": {"status": "partial", "laws": [{"name": "乙法", "known": True, "after": []}, {"name": "丙法", "known": False, "after": []}]}}}
+
+
+def law_check(tmp):
+    pack = json.loads((tmp / "lout" / "bic-匯入包.json").read_text(encoding="utf-8"))
+    by = {q["id"]: q for q in pack["questions"]}
+    act = [q for q in pack["questions"] if not q.get("dupOf")]
+    return (all(q.get("law", {}).get("checked") == "2026-10-08" for q in act) and "law" not in by["bic-law-u40-007"]
+            and by["bic-law-t47-001"]["law"]["status"] == "amended"
+            and pack["counts"]["law"] == {"amended": 1, "unchanged": 1, "partial": 1, "none": 2})
 
 
 def draft_dir_cases():
@@ -162,6 +183,10 @@ def main():
         ("一題有錯、其他題都對 → 一個檔都不寫", {"az900/a.txt": GOOD_AZ, "az900/b.txt": GOOD_AZ.replace("az900-a-o-0001", "az900-a-o-0002").replace("answer: 1", "answer: 9")}, {}, "public", False, ["az900-a-o-0002"]),
         ("考點清單：第一級直接收、第二級只收核對「保留」的；依期數再依最近一期排序編號；題目標上考點代號；教材清單類標 kind=list",
          {}, POINT_FILES, "local", True, (), points_check, {"points.json": POINTS, "points-review.json": REVIEW}),
+        ("法規修正標示：每題可練的題都標上 law（含查詢日），重複題不標；計數四類",
+         {}, POINT_FILES, "local", True, (), law_check, {}, LAW_OK),
+        ("法規修正標示：flags 少一題 → 擋、點名", {}, POINT_FILES, "local", False, ["bic-law-t48-006"], None, {},
+         {"checked": "2026-10-08", "flags": {k: v for k, v in LAW_OK["flags"].items() if k != "bic-law-t48-006"}}),
         ("考點清單：有考點檔、沒有人工核對紀錄 → 擋", {}, POINT_FILES, "local", False, ["points-review.json"], None, {"points.json": POINTS}),
         ("考點清單：群組裡的題號對不到題目 → 擋、點名", {}, {"bic/a.txt": GOOD_BIC_40, "bic/b.txt": GOOD_BIC_47}, "local", False, ["bic-law-t48-003"], None,
          {"points.json": POINTS, "points-review.json": REVIEW}),
