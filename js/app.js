@@ -98,7 +98,16 @@ async function homeView(gen) {
     }
     cards.push(h('section', { class: 'card' }, h('h2', { text: c.name }), h('p', { class: 'notice', text: c.notice }), ...body));
   }
-  render(gen, h('h1', { text: '證照題庫練習' }), ...cards);
+  // 設定頁的固定入口（2026-10-12 使用者回報：題目都匯入後找不到設定頁——原本唯一的入口是沒有題目時才出現的「去匯入題目」，
+  // 從主畫面打開沒有網址列，就完全進不去）。順便把這台裝置的紀錄是哪一種狀態寫在首頁，U3 不用找。
+  const ps = await persistState();
+  const psText = { protected: '已受保護', denied: '要求被拒絕', unsupported: '狀態不明' }[ps.state];
+  const entry = (h('section', { class: 'card', id: 'settings-entry' },
+    h('p', {}, '這台裝置的紀錄：', h('b', { class: ps.state === 'protected' ? 'ok' : 'ng', text: psText }),
+      ps.state === 'protected' ? '' : '（請看設定頁的說明，並記得偶爾匯出備份）'),
+    h('a', { class: 'btn', href: '#/settings', text: '設定：這台裝置的紀錄、備份與還原、匯入題目' })));
+  // 放在最上面：證照卡片有好幾張、很長，放底部等於又埋起來（2026-10-12 看截圖才發現）
+  render(gen, h('h1', { text: '證照題庫練習' }), entry, ...cards);
 }
 
 // ---------------------------------------------------------------- 練習設定
@@ -748,8 +757,15 @@ async function doubtsView(gen, q) {
 
 // ---------------------------------------------------------------- 設定：匯入題目
 // 這台裝置的紀錄會不會被瀏覽器自動清掉：三種狀態分開寫，狀態不明時不能表現成安全
+function isStandalone() {
+  return navigator.standalone === true || (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches);
+}
+
 function persistCard(s) {
-  const home = 'iPhone 請把這個網站加到主畫面（Safari 的「分享」→「加入主畫面」），之後都從主畫面打開；加到主畫面後，下次打開會再要求一次。';
+  // 已經是從主畫面打開的人，再叫他「加到主畫面」沒有意義（2026-10-12：使用者就是從主畫面開的）
+  const home = isStandalone()
+    ? '你已經是從主畫面打開的，瀏覽器仍沒有答應保護。這種情況能做的就是定期匯出備份（下面的「備份與還原」），資料被清掉時還原。'
+    : 'iPhone 請把這個網站加到主畫面（Safari 的「分享」→「加入主畫面」），之後都從主畫面打開；加到主畫面後，下次打開會再要求一次。';
   const body = {
     protected: [h('p', { class: 'ok', text: '已受保護' }),
       h('p', { text: '瀏覽器答應不會自動清掉這台裝置上的作答紀錄、錯題與匯入的題目。' }),
@@ -875,12 +891,13 @@ async function settingsView(gen) {
       h('p', { class: 'muted', text: '匯入會換掉這張證照先前匯入的題目（同一題的作答紀錄會保留）。' }), confirmBtn);
   });
   render(gen, h('a', { class: 'back', href: '#/', text: '← 回首頁' }),
-    h('section', { class: 'card' }, h('h2', { text: '匯入題目' }),
+    // 順序（2026-10-12 使用者回報後改）：這台裝置的紀錄放第一個——U3 要他看的就是這一塊，不能埋在匯入的下面（匯入後那一塊會變長）
+    persistCard(await persistState()),
+    await backupCard(),
+    h('section', { class: 'card', id: 'import' }, h('h2', { text: '匯入題目' }),
       h('p', { text: '選擇電腦產生的匯入包（例如 bic-匯入包.json）。題目只存在這支手機的瀏覽器裡，不會上傳到任何地方。' }),
       counts.length ? h('ul', {}, counts) : h('p', { class: 'muted', text: '目前沒有匯入的題目。' }),
       input, status),
-    persistCard(await storagePromise),
-    await backupCard(),
     h('section', { class: 'card' }, h('h2', { text: '關於' }),
       h('p', { text: '這個網站只有練習功能。作答紀錄、錯題、匯入的題目都只存在你這支手機的瀏覽器裡；網站不收集任何資料。' }),
       h('p', { class: 'muted', text: '換手機或清除瀏覽器資料後，要重新匯入題目；作答紀錄可以用上面的備份檔還原。' })));
@@ -908,6 +925,11 @@ async function route() {
 
 // 啟動時就向瀏覽器要求持久保存（不會跳出提示；設定頁顯示結果）。資料被自動清掉時 App 偵測不到，所以要讓他看得到狀態。
 const storagePromise = L.requestPersistence(navigator.storage);
+// 查詢一直沒有回應時（某些瀏覽器的 persist() 可能不回），最多等 3 秒就當「狀態不明（查詢逾時）」顯示——
+// 查不到狀態時更需要顯示，不能讓整頁等著、看起來像沒有這個功能（2026-10-12）
+function persistState() {
+  return Promise.race([storagePromise, new Promise(r => setTimeout(() => r({ state: 'unsupported', why: '查詢逾時' }), 3000))]);
+}
 window.addEventListener('hashchange', route);
 route();
 

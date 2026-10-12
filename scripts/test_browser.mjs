@@ -277,7 +277,7 @@ async function idbState(page) {
 
 async function importPack(page, path, expectActive) {
   await gotoView(page, page.url().split('#')[0] + '#/settings');
-  const input = await page.waitForSelector('input[type=file]');
+  const input = await page.waitForSelector('#import input[type=file]');
   await input.uploadFile(path);
   await waitText(page, `可練 ${expectActive} 題`);
   await page.click('button::-p-text(確定匯入)');
@@ -634,7 +634,7 @@ async function minimalTest(browser, base) {
     const pBad = join(tmpdir(), `certquiz-broken-${process.pid}.json`); tmpFiles.push(pBad);
     writeFileSync(pBad, JSON.stringify(broken));
     await gotoView(page, base + '#/settings');
-    const input = await page.waitForSelector('input[type=file]');
+    const input = await page.waitForSelector('#import input[type=file]');
     await input.uploadFile(pBad);
     await waitText(page, '不能匯入');
     await sleep(200);
@@ -1055,6 +1055,7 @@ async function persistTest(browser, base) {
     ['回傳不是 true（undefined）', `Object.defineProperty(navigator.storage, 'persisted', { value: async () => false });
                    Object.defineProperty(navigator.storage, 'persist', { value: async () => undefined });`, '要求被拒絕'],
     ['已經受保護', `Object.defineProperty(navigator.storage, 'persisted', { value: async () => true });`, '已受保護'],
+    ['查詢一直沒有回應', `Object.defineProperty(navigator.storage, 'persisted', { value: () => new Promise(() => {}) });`, '狀態不明'],
     ['真實情況（不動手腳）', null, null],
   ];
   for (const [name, inject, want] of scenarios) {
@@ -1071,6 +1072,12 @@ async function persistTest(browser, base) {
       if (!inject) expect = (await page.evaluate(() => navigator.storage && navigator.storage.persisted ? navigator.storage.persisted() : null)) === true ? '已受保護' : (await page.evaluate(() => !(navigator.storage && navigator.storage.persist))) ? '狀態不明' : '要求被拒絕';
       check(`持久保存（${name}）：設定頁只顯示「${expect}」${expect === '已受保護' ? '' : '，沒有任何「已受保護」字樣'}`,
         shown.length === 1 && shown[0] === expect && errors.length === 0, `顯示 ${JSON.stringify(shown)}｜錯誤 ${errors.join('；')}`);
+      const firstId = await page.$eval('#view section.card', e => e.id);
+      await gotoView(page, base + '#/');
+      const entry = await page.waitForSelector('#settings-entry').then(e => e.evaluate(x => x.innerText)).catch(() => '');
+      if (expect !== '已受保護') check(`持久保存（${name}）：一般瀏覽器分頁（不是主畫面）→ 叫他加到主畫面`, card.includes('請把這個網站加到主畫面') && !card.includes('你已經是從主畫面打開的'));
+      check(`持久保存（${name}）：設定頁第一塊就是「這台裝置的紀錄」；首頁也寫「${expect}」並有設定入口`,
+        firstId === 'persist' && entry.includes(`這台裝置的紀錄：${expect}`) && entry.includes('設定'), `第一塊 ${firstId}｜首頁 ${entry}`);
     } finally {
       await ctx.close();
     }
@@ -1293,11 +1300,62 @@ async function backupTest(browser, base) {
   }
 }
 
+// ---------------------------------------------------------------- 二之九之四、只能用點的（像從主畫面打開：沒有網址列）
+// 2026-10-12 使用者回報「資料都匯入後沒有設定頁面可以查看」：設定頁唯一的入口是沒有題目時才出現的「去匯入題目」，
+// 題目都匯入後就沒有入口；從主畫面打開沒有網址列，完全進不去。之前的測試都直接打網址跳頁，所以抓不到。
+// 這一段從頭到尾只開一次首頁，之後全部用點的。限度：這是 Chrome，不是 iPhone 的主畫面模式（Chrome 不能模擬 display-mode）；
+// 這裡模擬的是「沒有網址列」這一點，外加 navigator.standalone＝true 與 display-mode 媒體查詢回 standalone。
+async function clickOnlyTest(browser, base) {
+  console.log('== 二之九之四、只能用點的（模擬主畫面模式：沒有網址列）：從空的 App 匯入兩份題庫，之後還找得到設定頁');
+  const ctx = await browser.createBrowserContext();
+  const errors = [];
+  try {
+    const page = await newPage(ctx, errors);
+    await page.evaluateOnNewDocument(() => {
+      Object.defineProperty(navigator, 'standalone', { value: true, configurable: true });
+      const mm = window.matchMedia.bind(window);
+      window.matchMedia = q => /display-mode:\s*standalone/.test(q) ? { matches: true, media: q, addEventListener() {}, removeEventListener() {} } : mm(q);
+    });
+    let gotos = 0;
+    const clickTo = async (sel, waitFor) => { await (await page.waitForSelector(sel)).click(); if (waitFor) await waitText(page, waitFor); };
+    await page.goto(base); gotos++;
+    await waitText(page, '證照題庫練習');
+    const imp = async (file, active) => {
+      await clickTo('a.btn[href="#/settings"]', '匯入題目');
+      await (await page.waitForSelector('#import input[type=file]')).uploadFile(file);
+      await waitText(page, `${active}`);
+      await clickTo('button::-p-text(確定匯入)', '匯入完成');
+      await clickTo('a.btn::-p-text(回首頁開始練習)', '證照題庫練習');
+    };
+    const pack = JSON.parse(readFileSync(PACK, 'utf-8'));
+    await imp(PACK, pack.counts.active);
+    if (existsSync(ETHICS_PACK)) await imp(ETHICS_PACK, '考試範圍內');
+    const noImportBtn = await page.$$eval('a.btn', as => as.filter(a => a.textContent === '去匯入題目').length);
+    // 找不到入口要記成「不符」並點名，不能讓整支測試中止（中止看不出是哪一項）
+    const entryBtn = await page.$('#settings-entry a.btn[href="#/settings"]');
+    if (entryBtn) { await entryBtn.click(); await page.waitForSelector('#persist').catch(() => null); }   // 不能等「這台裝置的紀錄」這幾個字：首頁的設定入口也有
+    const first = entryBtn ? await page.$eval('#view section.card', e => ({ id: e.id, t: e.innerText })) : { id: '首頁沒有設定入口', t: '' };
+    check(`只能用點的：題目都匯入後（首頁已沒有「去匯入題目」：${noImportBtn === 0 ? '是' : '否'}），從首頁的設定入口點得進設定頁，第一塊是「這台裝置的紀錄」、顯示三種狀態之一；整段只開過 ${gotos} 次網址`,
+      noImportBtn === 0 && first.id === 'persist' && PERSIST_LABELS.some(l => first.t.includes(l)) && gotos === 1, JSON.stringify(first).slice(0, 160));
+    // 設定頁 → 回首頁 → 統計 → 答案有疑問 → 回統計 → 回首頁，全部用點的
+    if (entryBtn) await clickTo('a.back', '證照題庫練習');
+    await clickTo('a.btn[href="#/stats?cert=bic"]', '統計');
+    await clickTo('a.back', '證照題庫練習');
+    check('只能用點的（主畫面模式）：狀態不是「已受保護」時，不再叫他「加到主畫面」，改說已經從主畫面打開、要靠備份',
+      first.t.includes('已受保護') ? true : (first.t.includes('你已經是從主畫面打開的') && !first.t.includes('請把這個網站加到主畫面')), first.t.slice(0, 200));
+    const top = await page.$eval('#view', v => [...v.children].slice(0, 2).map(e => e.id || e.tagName));
+    check(`只能用點的：首頁的設定入口在最上面（標題下第一塊：${top.join('、')}）`, top[1] === 'settings-entry');
+    check('只能用點的：設定、統計之間都回得了首頁；沒有頁面錯誤', errors.length === 0, errors.join('；'));
+  } finally {
+    await ctx.close();
+  }
+}
+
 // ---------------------------------------------------------------- 二之十、金融市場常識與職業道德：考試範圍（116 年版）與範圍外（113 年版刪除／改過）分開
 const ETHICS_PACK = join(ROOT, 'data', 'local', 'import', 'ethics-匯入包.json');
 async function importEthics(page) {
   await gotoView(page, page.url().split('#')[0] + '#/settings');
-  const input = await page.waitForSelector('input[type=file]');
+  const input = await page.waitForSelector('#import input[type=file]');
   await input.uploadFile(ETHICS_PACK);
   await waitText(page, '考試範圍內 1174 題，另有不在範圍內的 128 題');
   await page.click('button::-p-text(確定匯入)');
@@ -1550,6 +1608,7 @@ async function main() {
     await persistTest(browser, base);
     await weakTest(browser, base);
     await doubtTest(browser, base);
+    await clickOnlyTest(browser, base);
     await backupTest(browser, base);
     await ethicsTest(browser, base);
     await missingBankTest(browser);
