@@ -1078,6 +1078,8 @@ async function persistTest(browser, base) {
       await gotoView(page, base + '#/');
       const entry = await page.waitForSelector('#settings-entry').then(e => e.evaluate(x => x.innerText)).catch(() => '');
       if (expect !== '已受保護') check(`持久保存（${name}）：一般瀏覽器分頁（不是主畫面）→ 叫他加到主畫面`, card.includes('請把這個網站加到主畫面') && !card.includes('你已經是從主畫面打開的'));
+      if (expect === '已受保護') check(`持久保存（${name}）：「已受保護」不寫成保證——設定頁寫「不是保證」並列出不受保護的情況、說備份是唯一可靠的辦法；首頁寫「不代表資料不會不見」`,
+        card.includes('不是保證資料不會不見') && card.includes('刪掉主畫面上的 App') && card.includes('備份仍然是唯一可靠的辦法') && entry.includes('不代表資料不會不見'), `${card.slice(0, 120)}｜${entry}`);
       check(`持久保存（${name}）：設定頁第一塊就是「這台裝置的紀錄」；首頁也寫「${expect}」並有設定入口`,
         firstId === 'persist' && entry.includes(`這台裝置的紀錄：${expect}`) && entry.includes('設定'), `第一塊 ${firstId}｜首頁 ${entry}`);
     } finally {
