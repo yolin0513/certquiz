@@ -82,9 +82,11 @@ def main():
                 f'<details class="ans" open><summary>答案與說明</summary>'
                 f'<p class="right-ans">官方正解：({q["answer"]}) {esc(q["options"][q["answer"] - 1])}</p>{explain(it)}{law_note(q)}</details></div>')
 
-    cards = []
-    ch = next(c for c in tb["chapters"] if "items" in c)
-    for it in ch["items"]:
+    PLAIN = "沒有說明的題＝純粹要背的數字或規定，我們說不出比「規定就是這樣」更多的理由——不是漏做。"
+    sections, tot = [], {"n": 0, "ne": 0, "no": 0, "np": 0, "cards": 0}
+    for ch in [c for c in tb["chapters"] if "items" in c]:
+      cards = []
+      for it in ch["items"]:
         head = ""
         if it.get("point"):
             head = f'<p class="badge">反覆考過：{it["point"]["times"]} 期都考過（{"同一份清單" if it["point"]["kind"] == "list" else "同一條規定"}）</p>'
@@ -92,9 +94,16 @@ def main():
         var = (f'<details class="var" open><summary>同一條規定的其他問法（{len(vs)}）</summary>' + "".join(qblock(v, "q v") for v in vs) + "</details>") if vs else ""
         cards.append(f'<section class="card item" data-point="{1 if it.get("point") else 0}" data-mark="">{head}{qblock(it)}{var}'
                      f'<div class="marks js-only" hidden><button type="button" data-m="read">讀過</button><button type="button" data-m="unsure">沒把握</button></div></section>')
-    allq = ch["items"] + [v for it in ch["items"] for v in it.get("variants", []) if not v.get("dup")]
-    n, ne, no, np_ = ch["count"], ch["explained"], ch.get("ours", 0), ch.get("plain", 0)
-    chap_rows = "".join(f'<tr><td>{esc(c["name"])}</td><td class=num>{c["count"]}</td><td>{"這份草稿的樣本章" if "items" in c else ""}</td></tr>' for c in tb["chapters"])
+      n, ne, no, np_ = ch["count"], ch["explained"], ch.get("ours", 0), ch.get("plain", 0)
+      # 每一章的章首都有那一句（Dispatch：沒有說明和沒做過，畫面上長得一樣）
+      sections.append(f'<section class="card chap-head" id="ch-{esc(ch["id"])}"><h2>{esc(ch["name"])}（{n} 題）</h2>'
+                      f'<p><b>法規重點 {ne} 題</b>・<b>我們寫的（未查證）{no} 題</b>・<b>沒有說明 {np_} 題</b></p>'
+                      f'<p class="plain-note"><b>{PLAIN}</b></p></section>' + "".join(cards))
+      for k, v in (("n", n), ("ne", ne), ("no", no), ("np", np_), ("cards", len(cards))):
+          tot[k] += v
+    n, ne, no, np_ = tot["n"], tot["ne"], tot["no"], tot["np"]
+    filled = [c for c in tb["chapters"] if "items" in c]
+    chap_rows = "".join(f'<tr><td>{esc(c["name"])}</td><td class=num>{c["count"]}</td><td>{"已做（這份草稿裡）" if "items" in c else ""}</td></tr>' for c in tb["chapters"])
     css = """
 :root{--bg:#f6f7f9;--paper:#fff;--fg:#1b2430;--muted:#556173;--line:#d8dee6;--pri:#1f5a8a;--pri-fg:#fff;--ok:#1d6b3a;--ok-bg:#e5f3ea;--ng:#a32a20;--ng-bg:#fbe7e5;--warn-bg:#fbf0dc;--f:"Noto Sans TC","PingFang TC","Microsoft JhengHei",system-ui,sans-serif}
 @media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#11161c;--paper:#1a2129;--fg:#e6eaef;--muted:#a1adbb;--line:#2e3844;--pri:#8fbbe3;--pri-fg:#11161c;--ok:#7fd29a;--ok-bg:#15301f;--ng:#f0a198;--ng-bg:#3a1f1c;--warn-bg:#33281a;color-scheme:dark}}
@@ -157,17 +166,17 @@ label{font-size:.92rem}input,select{color:var(--fg);accent-color:var(--pri)}sele
 <p class="muted">照你的選擇做：解答說明「乙＋丙」——指得出法規條文的放條文原文，其餘寫我們的理解並標「未經查證」；HTML（電腦上看）與 App（手機上看）都做，兩邊用同一份資料產生。產生時間 {esc(datetime.now().strftime("%Y-%m-%d %H:%M"))}。題目原文只放在你自己的裝置，不要轉貼。</p>
 <section class="card nojs" id="nojs"><p><b>如果你看不到搜尋框和按鈕</b>：表示這個瀏覽器沒有執行網頁程式（例如 iPhone 的「檔案」App 預覽）。內容仍然全部列出——答案和說明都已經展開，可以直接往下讀。手機上要互動，請用 App 裡的「讀書 → 教材」。</p></section>
 
-<section class="card"><h2>兩種說明怎麼分：信用卡這一章</h2>
+<section class="card"><h2>說明的三種情形（已做的 {len(filled)} 章合計 {n} 題）</h2>
 <ul>
 <li><b>法規重點 {ne} 題</b>：從考試當時那一版的條文濃縮成一句、標了條號（兩個判斷者都判條文寫出了正解，摘要另由一個獨立代理對照全文核對過）；完整條文可以展開看。</li>
 <li><b>我們寫的（未查證）{no} 題</b>：我們的理解，沒有外部依據，可能是錯的。</li>
 <li><b>沒有說明 {np_} 題</b>。</li>
 </ul>
-<p id="plain-note"><b>沒有說明的題＝純粹要背的數字或規定，我們說不出比「規定就是這樣」更多的理由——不是漏做。</b></p>
+<p id="plain-note"><b>{PLAIN}</b>（每一章的章首也都寫著這一句。）</p>
 <p><b>「我們寫的」怎麼寫</b>（每一題都照這三條）：只解釋為什麼官方正解是對的，不延伸補充；不寫法規名稱（那會讓它看起來像有依據）；拿不準就寫拿不準。<b>這一層可能是錯的</b>——它是我們的理解，沒有外部依據；跟你自己的理解或課本衝突時，以官方答案與法規為準。</p></section>
 
 <section class="card"><h2>分章方案</h2>
-<p><b>分章是為了好讀、好找，不是驗證過的學習單位</b>（量過：同一組讀懂一題對答對另一題有幫助的只有 11%）。章名來自官方簡章的命題範圍、依題庫實際內容拆細；題數是草稿用的關鍵字規則，<b>正式版會逐題歸章，題數會變</b>。</p>
+<p><b>分章是為了好讀、好找，不是驗證過的學習單位</b>（量過：同一組讀懂一題對答對另一題有幫助的只有 11%）。章名來自官方簡章的命題範圍、依題庫實際內容拆細；題數是逐題歸章（8 個代理各歸一批）的結果。</p>
 <div class="tw"><table><thead><tr><th>章</th><th>題數</th><th></th></tr></thead><tbody>{chap_rows}</tbody></table></div>
 <p class="muted">金融市場常識與職業道德：章名用證基會公告的範圍（常識 6 章、道德 7 章）；題庫 PDF 沒有標章節，每章題數要等正式版逐題歸章。那一科公開的是整份題庫、不是歷屆考卷，所以沒有「最常出現」可以數，會改成把同一概念的題排在一起。</p></section>
 
@@ -183,11 +192,10 @@ label{font-size:.92rem}input,select{color:var(--fg);accent-color:var(--pri)}sele
 <div class="tools js-only" hidden><input type="search" id="q" placeholder="搜尋（例如：循環信用）" aria-label="搜尋">
 <label><input type="checkbox" id="f-point"> 只看反覆考過的</label><label>說明種類 <select id="f-kind"><option value="">全部</option><option value="law">法規重點</option><option value="ours">我們寫的（未查證）</option><option value="plain">沒有說明</option></select></label><label><input type="checkbox" id="f-unsure"> 只看沒把握的</label>
 <button type="button" id="open-all">全部展開</button><button type="button" id="close-all">全部收起</button><span class="muted" id="cnt"></span></div>
-<h2>信用卡（{n} 題）</h2>
-{''.join(cards)}
+{''.join(sections)}
 </main><script>{js}</script></body></html>"""
     OUT.write_text(page, encoding="utf-8")
-    print(f"TEXTBOOK-HTML OK：{ch['name']} {n} 題、{len(cards)} 張卡；法規重點 {ne}、我們寫的 {no}、沒有說明 {np_} → {OUT}")
+    print(f"TEXTBOOK-HTML OK：{len(filled)} 章 {n} 題、{tot['cards']} 張卡；法規重點 {ne}、我們寫的 {no}、沒有說明 {np_} → {OUT}")
     return 0
 
 

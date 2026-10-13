@@ -24,7 +24,9 @@ const check = (d, ok, detail = '') => { out(`${ok ? '✓' : '✗'} ${d}${ok ? ''
 
 const FILE = join(ROOT, 'data', 'local', '教材', '教材草稿.html');
 const TB = JSON.parse(readFileSync(join(ROOT, 'data', 'local', '教材', 'textbook.json'), 'utf-8'));
-const ch = TB.chapters.find(c => c.items);
+// 所有已做的章合在一起看（每一章的章首都要有「沒有說明＝純粹要背」那一句）
+const filledCh = TB.chapters.filter(c => c.items);
+const ch = { items: filledCh.flatMap(c => c.items) };
 const want = [...ch.items.map(i => i.id), ...ch.items.flatMap(i => (i.variants || []).filter(v => !v.dup).map(v => v.id))].sort();
 const wantExp = new Set([...ch.items, ...ch.items.flatMap(i => i.variants || [])].filter(x => x.explain).map(x => x.id));
 const kindOf = x => x.explain ? 'law' : x.plain ? 'plain' : x.ours ? 'ours' : 'blank';
@@ -49,7 +51,7 @@ async function main() {
         ans: qs.filter(q => vis(q.querySelector('.right-ans'))).length,
         expOrBlank: qs.filter(q => q.getAttribute('data-kind') === 'plain' ? !q.querySelector('.exp, .ours, .blank') : (vis(q.querySelector('.exp')) || vis(q.querySelector('.ours')))).length,
         fullHidden: qs.filter(q => q.querySelector('.exp')).every(q => q.querySelector('details.full') && !q.querySelector('details.full').open && q.querySelector('details.full blockquote').textContent.length > 20),
-        plainNote: vis(document.getElementById('plain-note')),
+        plainNote: vis(document.getElementById('plain-note')) && document.querySelectorAll('.chap-head .plain-note').length === document.querySelectorAll('.chap-head').length && document.querySelectorAll('.chap-head').length > 0,
         kinds: Object.fromEntries(qs.map(q => [q.getAttribute('data-qid'), q.getAttribute('data-kind')])),
         oursStart: qs.filter(q => q.querySelector('.ours')).every(q => q.querySelector('.ours').textContent.startsWith('我們寫的（未查證）：')),
         lawStart: qs.filter(q => q.querySelector('.exp')).every(q => q.querySelector('.exp').textContent.startsWith('法規重點：第') && !q.querySelector('.exp').textContent.includes('未查證')),

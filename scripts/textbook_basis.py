@@ -49,12 +49,19 @@ def logged(action, name):
     return [l.split("\t")[3].strip() for l in LOG.read_text(encoding="utf-8").splitlines() if l.split("\t")[1:3] == [action, name]]
 
 
+def judges(topic):
+    """信用卡章（草稿）是我＋一個代理；全量起（docs/M）兩個判斷者都是獨立代理 a、b。"""
+    return ("me", "agent") if topic == "T08" else ("a", "b")
+
+
 def paths(topic):
-    return D / f"basis-{topic}-sheet.md", {w: D / f"basis-{topic}-judge-{w}.tsv" for w in ("me", "agent")}, D / f"basis-{topic}.json"
+    return D / f"basis-{topic}-sheet.md", {w: D / f"basis-{topic}-judge-{w}.tsv" for w in judges(topic)}, D / f"basis-{topic}.json"
 
 
 def candidates(topic):
-    tp = json.loads(TOPICS.read_text(encoding="utf-8"))["topics"]
+    # 章：全量起用逐題歸章的結果（chapters-bic.json）；信用卡章草稿當時用的是關鍵字規則
+    chf = D / "chapters-bic.json"
+    tp = json.loads(chf.read_text(encoding="utf-8")) if chf.exists() and topic != "T08" else json.loads(TOPICS.read_text(encoding="utf-8"))["topics"]
     qs = {q["id"]: q for q in json.loads(PACK.read_text(encoding="utf-8"))["questions"] if not q.get("dupOf")}
     el = LC.eligible()
     return qs, [i for i in sorted(qs) if tp.get(i) == topic], {i: el[i] for i in qs if tp.get(i) == topic and i in el}
@@ -127,13 +134,14 @@ def lock(who, topic):
 
 def merge(topic):
     sh, judges, out = paths(topic)
-    for j in judges.values():
+    for j in judges.values():  # noqa
         lk = logged("basis-lock", j.name)
         if not lk or sha(j) != lk[-1]:
             print(f"MERGE ABORT：{j.name} 還沒鎖定（或鎖定後被改過）")
             return 2
     key = json.loads((D / f"basis-{topic}-key.json").read_text(encoding="utf-8"))
-    me, ag = rows(judges["me"]), rows(judges["agent"])
+    j1, j2 = judges.values()
+    me, ag = rows(j1), rows(j2)
     qs, chap, el = candidates(topic)
     res, agree, disagree = {}, 0, []
     for code, k in key.items():
@@ -146,7 +154,7 @@ def merge(topic):
             tf = LC.TEXT / f"{k['pcode']}-{k['version']}.txt"
             m = re.search(r"(?m)^%s\n(.*?)(?=^第[0-9\-]+條$|\Z)" % re.escape(a[2]), tf.read_text(encoding="utf-8") + "\n", re.S)
             res[k["id"]] = {"law": k["law"], "pcode": k["pcode"], "version": k["version"], "article": a[2], "text": m.group(1).strip(),
-                            "snapshot": str(tf.relative_to(ROOT)).replace("\\", "/"), "url": k["url"], "link": a[3]}
+                            "snapshot": str(tf.relative_to(ROOT)).replace("\\", "/"), "url": k["url"], "link": a[3] or ""}
     out.write_text(json.dumps({"topic": topic, "chapter": len(chap), "candidates": len(el), "agree": agree, "disagree": disagree,
                                "basis": res}, ensure_ascii=False, indent=1), encoding="utf-8")
     log("basis-merge", out)
@@ -157,5 +165,6 @@ def merge(topic):
 
 if __name__ == "__main__":
     a = sys.argv[1:] + ["", ""]
+    # lock 的參數：lock <判斷者> <章>（例：lock a T07）
     sys.exit({"sheet": lambda: sheet(a[1]), "lock": lambda: lock(a[1], a[2] or "T08"), "merge": lambda: merge(a[1])}
              .get(a[0], lambda: (print(__doc__), 2)[1])())

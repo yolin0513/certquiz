@@ -660,7 +660,8 @@ function tbQuestion(x, byId, lawSum) {
 async function textbookView(gen, q, cert, questions, tb, home, tabs, lawSum) {
   const byId = new Map(questions.map(x => [x.id, x]));
   const cid = q.get('chapter');
-  const draft = tb.status === 'draft' ? h('p', { class: 'muted', text: '草稿：先做了「信用卡」一章給你確認；其他章只列題數。分章是為了好讀、好找，不保證「讀完這章就會這章的題」。' }) : null;
+  const done = tb.chapters.filter(x => x.items).map(x => `「${x.name}」`).join('、');
+  const draft = tb.status === 'draft' ? h('p', { class: 'muted', text: `草稿：目前做好的是 ${done}，給你確認；其他章只列題數。分章是為了好讀、好找，不保證「讀完這章就會這章的題」。` }) : null;
   if (!cid) {
     render(gen, home, tabs, h('section', { class: 'card', id: 'tb-index' }, h('h2', { text: `${cert.short}：教材` }), draft,
       h('div', { class: 'study-skills' }, tb.chapters.map(c => c.items
