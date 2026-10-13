@@ -55,7 +55,7 @@ POINT_FILES = {"bic/a.txt": GOOD_BIC_40, "bic/b.txt": GOOD_BIC_47, "bic/c.txt": 
 
 def run_case(desc, public_files, local_files, mode, expect_ok, expect_ids=(), check=None, study=None, law=None):
     tmp = Path(tempfile.mkdtemp(prefix="certquiz-build-"))
-    saved = (B.SRC, B.OUT, B.LOCAL_SRC, B.LOCAL_OUT, B.STUDY_DIR, B.LAW_FLAGS)
+    saved = (B.SRC, B.OUT, B.LOCAL_SRC, B.LOCAL_OUT, B.STUDY_DIR, B.LAW_FLAGS, B.TEXTBOOK)
     try:
         # 考點檔也要指到暫存目錄：不然測試會讀到真正的 data/local/study/points.json
         (tmp / "study").mkdir()
@@ -64,6 +64,7 @@ def run_case(desc, public_files, local_files, mode, expect_ok, expect_ids=(), ch
         B.STUDY_DIR = tmp / "study"
         # 法規修正標示也一樣：不然會讀到真正的 data/local/law/flags.json
         B.LAW_FLAGS = tmp / "law-flags.json"
+        B.TEXTBOOK = tmp / "textbook.json"   # 教材也一樣，不然會讀到真的 data/local/教材/textbook.json
         if law is not None:
             B.LAW_FLAGS.write_text(json.dumps(law, ensure_ascii=False), encoding="utf-8")
         (tmp / "src").mkdir()
@@ -92,7 +93,7 @@ def run_case(desc, public_files, local_files, mode, expect_ok, expect_ids=(), ch
                 print(f"    {e}")
         return ok
     finally:
-        B.SRC, B.OUT, B.LOCAL_SRC, B.LOCAL_OUT, B.STUDY_DIR, B.LAW_FLAGS = saved
+        B.SRC, B.OUT, B.LOCAL_SRC, B.LOCAL_OUT, B.STUDY_DIR, B.LAW_FLAGS, B.TEXTBOOK = saved
         shutil.rmtree(tmp, ignore_errors=False)
 
 

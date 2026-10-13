@@ -820,6 +820,27 @@ async function importStudyTest(browser, base) {
     await gotoView(page, base + '#/study?cert=bic&view=browse&subject=law&period=47');
     await page.waitForSelector('.study-q');
     const bcards = await page.$$eval('.study-q', cs => cs.map(c => [...c.querySelectorAll('.study-opts li.right')].length));
+    // 教材（草稿）：App 版跟 HTML 用同一份 textbook.json；有說明的題數、留白的題數、題號都要對得上
+    if (pack.textbook) {
+      const tch = pack.textbook.chapters.find(c => c.items);
+      await gotoView(page, base + '#/study?cert=bic&view=textbook');
+      await page.waitForSelector('#tb-index');
+      await gotoView(page, base + `#/study?cert=bic&view=textbook&chapter=${tch.id}`);
+      await page.waitForSelector('#tb-head');
+      const got = await page.evaluate(() => ({
+        ids: [...document.querySelectorAll('.tb-q')].map(e => e.getAttribute('data-qid')).sort(),
+        exp: [...document.querySelectorAll('.tb-q')].filter(e => e.querySelector('.tb-exp')).map(e => e.getAttribute('data-qid')).sort(),
+        blank: document.querySelectorAll('.tb-q .tb-blank').length, head: document.getElementById('tb-head').innerText,
+        open: [...document.querySelectorAll('details.tb-ans')].filter(d => d.open).length }));
+      const all = [...tch.items, ...tch.items.flatMap(i => (i.variants || []).filter(v => !v.dup))];
+      const wantExp = all.filter(x => x.explain).map(x => x.id).sort();
+      check(`教材（App）：${tch.name} ${got.ids.length} 題＝textbook.json 的 ${all.length} 題（同一份來源）；有說明 ${got.exp.length}＝${wantExp.length}、留白 ${got.blank} 題；答案預設收合；頁首寫出有說明與留白的題數`,
+        JSON.stringify(got.ids) === JSON.stringify(all.map(x => x.id).sort()) && JSON.stringify(got.exp) === JSON.stringify(wantExp)
+        && got.blank === all.length - wantExp.length && got.open === 0 && got.head.includes(`有說明 ${wantExp.length} 題、留白 ${tch.count - wantExp.length} 題`), got.head.slice(0, 120));
+      // 回到原本的期別頁：後面的檢查要在那一頁上做
+      await gotoView(page, base + '#/study?cert=bic&view=browse&subject=law&period=47');
+      await page.waitForSelector('.study-q .law-note');
+    }
     check(`依期別瀏覽：法規第 47 期 ${bcards.length} 題＝匯入包可練的 ${want.length} 題，每題只標一個正解`,
       bcards.length === want.length && bcards.every(n => n === 1));
     {
@@ -952,6 +973,7 @@ async function lookTest(browser, base, shotDir) {
       ['AZ 大綱目錄', '#/study?cert=az900', '.item'],
       ['AZ 細項', '#/study?cert=az900&objective=A.1&skill=1', '.study-q'],
       ['內控反覆考點', '#/study?cert=bic', '.study-q'],
+      ['內控教材（草稿）', '#/study?cert=bic&view=textbook&chapter=T08', '.tb-q'],
       ['內控期別清單', '#/study?cert=bic&view=browse', '.card .btn'],
       ['內控單期', '#/study?cert=bic&view=browse&subject=law&period=47', '.study-q'],
       ['練習設定', '#/setup?cert=bic', 'select'],

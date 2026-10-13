@@ -458,8 +458,10 @@ async function studyView(gen, q) {
 // 沒有官方解析，所以這裡只有題目與官方正解，不寫任何自己的說明（docs/K）。
 async function importStudyView(gen, q, cert, questions) {
   const certId = cert.id;
-  const view = q.get('view') === 'browse' ? 'browse' : 'points';
+  const view = ['browse', 'textbook'].includes(q.get('view')) ? q.get('view') : 'points';
+  const textbook = await DB.getMeta(`textbook:${certId}`, null);
   const tabs = h('div', { class: 'row' },
+    textbook ? h('a', { class: view === 'textbook' ? 'btn primary' : 'btn', href: `#/study?cert=${certId}&view=textbook`, text: `教材${textbook.status === 'draft' ? '（草稿）' : ''}` }) : null,
     h('a', { class: view === 'points' ? 'btn primary' : 'btn', href: `#/study?cert=${certId}`, text: '反覆考過的規定' }),
     h('a', { class: view === 'browse' ? 'btn primary' : 'btn', href: `#/study?cert=${certId}&view=browse`, text: '依科目與期別瀏覽' }));
   const active = questions.filter(L.isActive);
@@ -473,6 +475,7 @@ async function importStudyView(gen, q, cert, questions) {
     return;
   }
   const lawSum = L.lawSummary(questions);
+  if (view === 'textbook' && textbook) { await textbookView(gen, q, cert, questions, textbook, home, tabs, lawSum); return; }
 
   if (view === 'points') {
     const list = L.pointList(await DB.getMeta(`points:${certId}`, []), questions);
@@ -620,6 +623,61 @@ function examLawCard(qs, answers, sum) {
         + e.map(l => `「${l.name}」${l.after[l.after.length - 1]} 修正`).join('、') + (b ? '・整批依舊版' : ''));
     })) : null,
     h('p', { class: 'muted', text: '這些題的正解是依考試當時的舊版。有標示不代表答案錯了；沒有標示也不代表一定還有效（沒有版本資料的題，我們不知道有沒有改過）。' }));
+}
+
+// ---------------------------------------------------------------- 教材（2026-10-13；資料與本機 HTML 同一份：data/local/教材/textbook.json）
+// 解答說明照使用者選的「乙」：指得出外部依據（法規條文）才寫；指不出來的留白，並寫出留白的原因。題目文字用匯入的題目。
+function tbExplain(x) {
+  if (x.explain) {
+    const e = x.explain, v = e.version || '';
+    return h('div', { class: 'tb-exp' }, h('p', { class: 'ok', text: '說明（有依據）' }),
+      h('p', {}, e.link, h('span', { class: 'muted', text: '（這一句是我們寫的，把條文接到答案）' })),
+      h('p', { class: 'muted', text: `依據：「${e.law}」${e.article}，這題考試當時的版本（${v.slice(0, 4)}-${v.slice(4, 6)}-${v.slice(6)}）。原文：` }),
+      h('blockquote', { class: 'tb-quote', text: e.text }),
+      h('p', { class: 'src', text: `原文來源：全國法規資料庫該版全文（2026-10-08 抓取），快照 ${e.snapshot}` }));
+  }
+  return h('div', { class: 'tb-blank' }, h('p', { text: '說明：留白' }), h('p', { class: 'muted', text: `原因：${x.blank}。只有指得出外部依據（法規條文）時才寫說明。` }));
+}
+
+function tbQuestion(x, byId, lawSum) {
+  const qq = byId.get(x.id);
+  if (!qq) return null;
+  return h('div', { class: 'tb-q', 'data-qid': x.id },
+    h('p', { class: 'stem', text: qq.stem }),
+    h('ol', { class: 'study-opts' }, qq.options.map(t => h('li', { text: t }))),
+    h('details', { class: 'tb-ans' }, h('summary', { text: '答案與說明' }),
+      h('p', { class: 'ok', text: `官方正解：(${qq.answer}) ${qq.options[qq.answer - 1]}` }), tbExplain(x), lawNote(qq, lawSum), doubtButton(qq)));
+}
+
+async function textbookView(gen, q, cert, questions, tb, home, tabs, lawSum) {
+  const byId = new Map(questions.map(x => [x.id, x]));
+  const cid = q.get('chapter');
+  const draft = tb.status === 'draft' ? h('p', { class: 'muted', text: '草稿：先做了「信用卡」一章給你確認；其他章只列題數。分章是為了好讀、好找，不保證「讀完這章就會這章的題」。' }) : null;
+  if (!cid) {
+    render(gen, home, tabs, h('section', { class: 'card', id: 'tb-index' }, h('h2', { text: `${cert.short}：教材` }), draft,
+      h('div', { class: 'study-skills' }, tb.chapters.map(c => c.items
+        ? h('a', { class: 'item', href: `#/study?cert=${cert.id}&view=textbook&chapter=${c.id}` }, h('span', { class: 'name', text: c.name }), h('span', { class: 'meta', text: `${c.count} 題・有說明 ${c.explained}` }))
+        : h('div', { class: 'item none' }, h('span', { class: 'name', text: c.name }), h('span', { class: 'meta', text: `${c.count} 題・正式版才做` }))))));
+    return;
+  }
+  const c = tb.chapters.find(x => x.id === cid && x.items);
+  if (!c) { render(gen, home, tabs, h('section', { class: 'card' }, h('p', { text: '這一章還沒有內容。' }))); return; }
+  const all = [...c.items, ...c.items.flatMap(i => (i.variants || []).filter(v => !v.dup))];
+  const ne = all.filter(x => x.explain).length;
+  const reasons = {};
+  for (const x of all) if (x.blank) reasons[x.blank] = (reasons[x.blank] || 0) + 1;
+  render(gen, h('a', { class: 'back', href: `#/study?cert=${cert.id}&view=textbook`, text: '← 回教材目錄' }), tabs,
+    h('section', { class: 'card', id: 'tb-head' }, h('h2', { text: `${c.name}（${c.count} 題）` }), draft,
+      h('p', {}, h('b', { text: `有說明 ${ne} 題、留白 ${c.count - ne} 題。` })),
+      // 寬度用 el.style 設：網站的 CSP 不准 style 屬性（style-src 'self'），用屬性寫會被擋
+      (bar => { bar.children[0].style.width = `${(ne / c.count * 100).toFixed(1)}%`; bar.children[1].style.width = `${((c.count - ne) / c.count * 100).toFixed(1)}%`; return bar; })(
+        h('div', { class: 'tb-bar', role: 'img', 'aria-label': `有說明 ${ne} 題、留白 ${c.count - ne} 題` }, h('span', { class: 'e' }), h('span', { class: 'b' }))),
+      h('p', { class: 'muted', text: `實心＝有說明；斜線＝留白。留白的原因：${Object.entries(reasons).sort((a, b) => b[1] - a[1]).map(([k, v]) => `${k} ${v} 題`).join('、')}。` })),
+    c.items.map(it => h('section', { class: 'card tb-item' },
+      it.point ? h('p', { class: 'tb-badge', text: `反覆考過：${it.point.times} 期都考過（${it.point.kind === 'list' ? '同一份清單' : '同一條規定'}）` }) : null,
+      tbQuestion(it, byId, lawSum),
+      (it.variants || []).filter(v => !v.dup).length ? h('details', {}, h('summary', { text: `同一條規定的其他問法（${it.variants.filter(v => !v.dup).length}）` }),
+        it.variants.filter(v => !v.dup).map(v => tbQuestion(v, byId, lawSum))) : null)));
 }
 
 // 正解換了的題（113 年版 → 116 年版）：寫明新舊正解各是什麼。照舊版背會「確信地答錯」，所以作答後與讀書頁都單獨標出來。
@@ -887,6 +945,7 @@ async function settingsView(gen) {
       confirmBtn.disabled = true;
       const res = await DB.replaceUserQuestions(r.cert, r.questions);
       await DB.setMeta(`points:${r.cert}`, r.points || []);   // 考點清單跟著匯入包走；舊版匯入包沒有考點就清成空的
+      await DB.setMeta(`textbook:${r.cert}`, r.textbook || null);   // 教材也跟著匯入包走（2026-10-13）
       fill(status, h('p', { class: 'ok', text: `匯入完成：${cert.short} ${res.added} 題（${activeText}）。原本的 ${res.removed} 題已換成這一份；作答紀錄保留。` }),
         h('a', { class: 'btn', href: '#/', text: '回首頁開始練習' }));
     } });

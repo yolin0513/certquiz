@@ -82,7 +82,26 @@ export function validateImportPack(obj, knownCerts) {
       points = obj.points;
     }
   }
-  return { ok: errors.length === 0, errors, cert: obj.cert, questions: errors.length ? [] : qs, points: errors.length ? [] : points };
+  // 教材（只有本機匯入包有，2026-10-13）：題號都要在包內；說明要有法規、條號、原文與快照；留白要寫原因
+  let textbook = null;
+  if (obj.textbook !== undefined) {
+    const tb = obj.textbook;
+    if (!tb || !Array.isArray(tb.chapters)) errors.push('教材格式不對');
+    else {
+      tb.chapters.forEach((c, ci) => {
+        const tag = `教材第 ${ci + 1} 章`;
+        if (!c || typeof c.name !== 'string' || !c.name || typeof c.count !== 'number') { errors.push(`${tag}：格式不對`); return; }
+        for (const it of c.items || []) for (const x of [it, ...(it.variants || [])]) {
+          if (!x || !byId.has(x.id)) { errors.push(`${tag}：題號 ${x && x.id} 不在包內`); continue; }
+          if (x.dup) continue;
+          if (x.explain) { const e = x.explain; if (![e.law, e.article, e.text, e.snapshot, e.link].every(v => typeof v === 'string' && v)) errors.push(`${tag}：${x.id} 的說明缺欄位`); }
+          else if (typeof x.blank !== 'string' || !x.blank) errors.push(`${tag}：${x.id} 沒有說明也沒有寫留白原因`);
+        }
+      });
+      if (!errors.length) textbook = tb;
+    }
+  }
+  return { ok: errors.length === 0, errors, cert: obj.cert, questions: errors.length ? [] : qs, points: errors.length ? [] : points, textbook: errors.length ? null : textbook };
 }
 
 // ---------------------------------------------------------------- 法規修正標示（N1，Dispatch 2026-10-12）

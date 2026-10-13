@@ -421,5 +421,26 @@ if (existsSync(real)) {
   check('備份裡的標記格式不對（缺證照）→ 整份不收', !L.validateBackup({ ...JSON.parse(JSON.stringify(bk)), meta: { doubts: { x: { ts: 1 } } } }).ok);
 }
 
+// 教材（2026-10-13）：題號都要在包內；有說明的要有法規、條號、原文、快照、那一句；沒說明的要寫留白原因
+{
+  const qs = [q('bic-law-t47-001'), q('bic-law-t47-002'), q('bic-law-t47-003')];
+  const ex = { law: '甲辦法', article: '第1條', version: '20211013', text: '條文原文', snapshot: 'data/local/law/text/x.txt', url: 'u', link: '所以是 (2)。' };
+  const tb = items => ({ version: 1, status: 'draft', chapters: [{ id: 'T08', name: '信用卡', count: 3, explained: 1, items }, { id: 'T01', name: '其他章', count: 9 }] });
+  const good = tb([{ id: 'bic-law-t47-001', explain: ex, variants: [{ id: 'bic-law-t47-002', blank: '題目沒有點名法規' }] }, { id: 'bic-law-t47-003', blank: '題目沒有點名法規' }]);
+  const r = L.validateImportPack(pack(qs, { textbook: good }), ['bic']);
+  check('教材：合格的通過、匯入結果帶著教材', r.ok && r.textbook && r.textbook.chapters.length === 2, r.errors.join('；'));
+  const bad = [
+    ['題號不在包內', tb([{ id: 'bic-law-t99-001', blank: 'x' }]), '不在包內'],
+    ['沒有說明也沒寫留白原因', tb([{ id: 'bic-law-t47-001' }]), '留白原因'],
+    ['說明缺原文', tb([{ id: 'bic-law-t47-001', explain: { ...ex, text: '' } }]), '說明缺欄位'],
+    ['其他問法的題號不在包內', tb([{ id: 'bic-law-t47-001', blank: 'x', variants: [{ id: 'bic-law-t99-002', blank: 'x' }] }]), '不在包內'],
+  ];
+  for (const [d, t, why] of bad) {
+    const rr = L.validateImportPack(pack(qs, { textbook: t }), ['bic']);
+    check(`教材：${d} → 整包不收、點名「${why}」`, !rr.ok && rr.errors.some(e => e.includes(why)), rr.errors.join('；'));
+  }
+  check('教材：沒有教材的匯入包 → textbook 是 null', L.validateImportPack(pack(qs), ['bic']).textbook === null);
+}
+
 console.log(fails ? `TEST-LOGIC FAILED：${fails} 項不符` : 'TEST-LOGIC OK：全部符合');
 process.exit(fails ? 1 : 0);

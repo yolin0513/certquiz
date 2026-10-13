@@ -104,3 +104,15 @@ details summary { cursor: pointer; margin: 6px 0; }
 /* 「答案有疑問」標記：標了之後要看得出來（不只換字） */
 .btn.doubt { margin-top: 8px; font-size: .9rem; min-height: 40px; }
 .btn.doubt.on { border: 2px solid var(--ng); color: var(--ng); }
+/* 教材（草稿）：有說明＝綠線；留白＝虛線框（留白要看得出來，不能像漏掉） */
+.tb-exp { border-left: 3px solid var(--ok); padding-left: 10px; margin: 8px 0; }
+.tb-quote { margin: 6px 0; padding: 6px 10px; border-left: 3px solid var(--muted); white-space: pre-wrap; }
+.tb-blank { border: 2px dashed var(--muted); border-radius: 10px; padding: 6px 12px; margin: 8px 0; }
+.tb-blank p:first-child { font-weight: 700; margin: 0; }
+.tb-bar { display: flex; height: 14px; border-radius: 7px; overflow: hidden; border: 1px solid var(--line); margin: 8px 0; }
+.tb-bar .e { background: var(--ok); }
+.tb-bar .b { background: repeating-linear-gradient(45deg, var(--line), var(--line) 4px, transparent 4px, transparent 8px); }
+.tb-badge { display: inline-block; font-size: .85rem; padding: 2px 10px; border-radius: 999px; background: var(--ok-bg); color: var(--ok); margin: 0 0 6px; }
+details .tb-q { border-top: 1px dashed var(--line); padding-top: 6px; margin-top: 6px; }
+/* 教材裡的法規那一行不加框：避免跟「說明：留白」的虛線框長得一樣（兩件不同的事，2026-10-13 看截圖發現） */
+.tb-ans .law-note.partial, .tb-ans .law-note.none { border: 0; padding: 0; }

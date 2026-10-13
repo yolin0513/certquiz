@@ -372,6 +372,23 @@ def attach_law(cid, items, pack):
     return []
 
 
+TEXTBOOK = ROOT / "data" / "local" / "教材" / "textbook.json"
+
+
+def attach_textbook(cid, items, pack):
+    """教材（2026-10-13）：data/local/教材/textbook.json 是唯一來源（HTML 也從它產生）。只放題號與說明，題目文字用匯入包裡的。
+    沒有這個檔就不放。題號對不到題目就擋（不放半套）。回傳錯誤清單。"""
+    if cid != "bic" or not TEXTBOOK.exists():
+        return []
+    tb = json.loads(TEXTBOOK.read_text(encoding="utf-8"))
+    ids = {q["id"] for q in items}
+    missing = [x["id"] for c in tb["chapters"] for it in c.get("items", []) for x in [it] + it.get("variants", []) if x["id"] not in ids]
+    if missing:
+        return [f"教材的題號對不到題目：{missing[:3]}（重新跑 scripts/textbook_build.py）"]
+    pack["textbook"] = tb
+    return []
+
+
 def build_local(certs, check_only):
     cert_ids = {c["id"] for c in certs}
     files, qs, errs = collect(LOCAL_SRC, cert_ids, "local")
@@ -392,7 +409,7 @@ def build_local(certs, check_only):
             "notice": "本機自用：題目來自使用者自行取得的官方歷屆試題 PDF。不得上傳、不得散布。",
             "questions": items,
         }
-        perr = attach_points(cid, items, pack) or attach_law(cid, items, pack)
+        perr = attach_points(cid, items, pack) or attach_law(cid, items, pack) or attach_textbook(cid, items, pack)
         if perr:
             return None, perr
         name = next(c["short"] for c in certs if c["id"] == cid)
