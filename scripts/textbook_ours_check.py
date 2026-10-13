@@ -202,6 +202,10 @@ def extra(topic, batch):
     O, Q = ours(topic), qmap()
     pool = sorted(i for i, v in O.items() if v[0] == "說明" and v[2] == batch and i not in prev)
     pick = random.Random(SEED + 7000 + RND).sample(pool, min(8, len(pool)))
+    # 上一輪抽樣不合格、這一輪修過的那一段也要再判一次（不算在加抽的 8 段裡）
+    pf = D / f"ours-{topic}-sample{'' if RND - 1 <= 1 else f'-r{RND - 1}'}.tsv"
+    fixed = [k for k, c in rows(pf, 6).items() if "不合格" in c[1:5] and O.get(k, [""])[0] == "說明"] if pf.exists() else []
+    pick = fixed + pick
     md = ["# 「我們寫的」加抽複核", "", "每一段判四項（不要判「寫得對不對」——那沒有真值）：", CRIT, "",
           "每項填「合格」或「不合格」；有不合格要寫一句理由。只看這份單子。", ""]
     lines = ["題號\tC1\tC2\tC4\tC5\t理由"]
@@ -221,6 +225,16 @@ def result_extra(topic):
     if not lk or sha(xp) != lk[-1] or sha(of) != (logged(f"ours-extra-sheet{sfx()}", of.name) or [""])[-1]:
         print("RESULT ABORT：加抽判斷檔還沒鎖定、被改過，或 ours 檔在加抽後被改過")
         return 2
+    # 修完要重新做 C1 全量（docs/M）：同一輪的 C1 要鎖定、針對現在這份 ours、矛盾 0
+    c1p = D / f"ours-{topic}-c1{sfx()}.tsv"
+    lk1 = logged("ours-c1-lock", c1p.name)
+    if not lk1 or sha(c1p) != lk1[-1] or sha(of) != (logged(f"ours-c1-sheet{sfx()}", of.name) or [""])[-1]:
+        print("RESULT ABORT：這一輪的 C1 全量還沒做、還沒鎖定，或不是針對現在這份 ours")
+        return 2
+    c1bad = [k for k, c in rows(c1p, 3).items() if c[1] == "矛盾"]
+    if c1bad:
+        print(f"RESULT：C1 全量有矛盾 {c1bad} → 照 docs/M 處理")
+        return 1
     S = rows(xp, 6)
     bad = [k for k, c in S.items() if "不合格" in c[1:5]]
     if bad:
