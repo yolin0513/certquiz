@@ -52,12 +52,14 @@ def summaries(topic):
     return out
 
 
-def files(topic):
-    return D / f"summary-{topic}-check.md", D / f"summary-{topic}-judge.tsv", D / f"summary-{topic}-key.json"
+def files(topic, rnd=1):
+    """第 1 輪沒有後綴；修正摘要後重新核對是第 2 輪起（-r2…），由新的代理整份重判，不只判改過的那題。"""
+    sfx = "" if rnd == 1 else f"-r{rnd}"
+    return D / f"summary-{topic}-check{sfx}.md", D / f"summary-{topic}-judge{sfx}.tsv", D / f"summary-{topic}-key{sfx}.json"
 
 
-def sheet(topic):
-    md_p, judge_p, key_p = files(topic)
+def sheet(topic, rnd=1):
+    md_p, judge_p, key_p = files(topic, rnd)
     if key_p.exists():
         print("SHEET ABORT：已經產生過")
         return 2
@@ -97,8 +99,8 @@ def rows(p):
     return out
 
 
-def lock(topic):
-    _, judge_p, _ = files(topic)
+def lock(topic, rnd=1):
+    _, judge_p, _ = files(topic, rnd)
     bad = [k for k, c in rows(judge_p).items() if c[1] not in ("一致", "偏離") or (c[1] == "偏離" and not c[2])]
     if bad:
         print(f"LOCK ABORT：判斷檔有空白或格式不對：{bad}")
@@ -107,16 +109,20 @@ def lock(topic):
         print("LOCK ABORT：已經鎖定過")
         return 2
     log("summary-lock", judge_p)
-    log("summary-lock-text", D / f"summary-{topic}.tsv")
+    log(f"summary-lock-text-r{rnd}", D / f"summary-{topic}.tsv")
     print(f"LOCK OK：{judge_p.name}")
     return 0
 
 
 def checked(topic):
-    """回傳 {題號: 摘要}：判一致、判斷檔與摘要檔都在鎖定後沒被改過。沒鎖定或被改過回 None。"""
-    _, judge_p, key_p = files(topic)
+    """回傳 ({題號: 摘要}, 偏離清單)：用鎖定過的最新一輪；判斷檔與摘要檔都要在那一輪鎖定後沒被改過。否則回 None。"""
+    rnd = max([r for r in range(1, 10) if files(topic, r)[1].exists() and logged("summary-lock", files(topic, r)[1].name)] or [0])
+    if not rnd:
+        return None
+    _, judge_p, key_p = files(topic, rnd)
     sp = D / f"summary-{topic}.tsv"
-    lj, ls = logged("summary-lock", judge_p.name), logged("summary-lock-text", sp.name)
+    lj = logged("summary-lock", judge_p.name)
+    ls = logged(f"summary-lock-text-r{rnd}", sp.name) or (logged("summary-lock-text", sp.name) if rnd == 1 else [])
     if not lj or not ls or sha(judge_p) != lj[-1] or sha(sp) != ls[-1]:
         return None
     key = json.loads(key_p.read_text(encoding="utf-8"))
@@ -136,5 +142,6 @@ def result(topic):
 
 
 if __name__ == "__main__":
-    a = sys.argv[1:] + ["", ""]
-    sys.exit({"sheet": lambda: sheet(a[1]), "lock": lambda: lock(a[1]), "result": lambda: result(a[1])}.get(a[0], lambda: (print(__doc__), 2)[1])())
+    a = sys.argv[1:] + ["", "", ""]
+    r = int(a[2]) if a[2].isdigit() else 1
+    sys.exit({"sheet": lambda: sheet(a[1], r), "lock": lambda: lock(a[1], r), "result": lambda: result(a[1])}.get(a[0], lambda: (print(__doc__), 2)[1])())

@@ -832,15 +832,16 @@ async function importStudyTest(browser, base) {
         exp: [...document.querySelectorAll('.tb-q')].filter(e => e.querySelector('.tb-exp')).map(e => e.getAttribute('data-qid')).sort(),
         blank: document.querySelectorAll('.tb-q .tb-blank').length, head: document.getElementById('tb-head').innerText,
         ours: [...document.querySelectorAll('.tb-q')].filter(e => e.querySelector('.tb-ours')).map(e => e.getAttribute('data-qid')).sort(),
-        oursStart: [...document.querySelectorAll('.tb-ours')].every(e => e.textContent.startsWith('我們寫的（未查證）：') || e.textContent.startsWith('看不出原因：')) && [...document.querySelectorAll('.tb-exp')].every(e => e.textContent.startsWith('法規原文：')),
+        oursStart: [...document.querySelectorAll('.tb-ours')].every(e => e.textContent.startsWith('我們寫的（未查證）：')) && [...document.querySelectorAll('.tb-exp')].every(e => e.textContent.startsWith('法規重點：第') && !e.textContent.includes('未查證') && e.querySelector('details.tb-full') && !e.querySelector('details.tb-full').open),
+        plainNote: !!document.getElementById('tb-plain-note'),
         open: [...document.querySelectorAll('details.tb-ans')].filter(d => d.open).length }));
       const all = [...tch.items, ...tch.items.flatMap(i => (i.variants || []).filter(v => !v.dup))];
       const wantExp = all.filter(x => x.explain).map(x => x.id).sort();
       const wantOurs = all.filter(x => x.ours).map(x => x.id).sort();
-      const wantUnk = all.filter(x => x.ours && x.ours.unknown).length;
+      const wantPlain = all.filter(x => x.plain).length;
       check(`教材（App）：${tch.name} ${got.ids.length} 題＝textbook.json 的 ${all.length} 題（同一份來源）；法規原文 ${got.exp.length}＝${wantExp.length}、我們寫的 ${got.ours.length}＝${wantOurs.length}、留白 ${got.blank}；每段「我們寫的」固定開頭；答案預設收合；頁首寫出三個數字`,
         JSON.stringify(got.ids) === JSON.stringify(all.map(x => x.id).sort()) && JSON.stringify(got.exp) === JSON.stringify(wantExp) && JSON.stringify(got.ours) === JSON.stringify(wantOurs)
-        && got.blank === 0 && got.oursStart && got.open === 0 && got.head.includes(`法規原文 ${wantExp.length} 題`) && got.head.includes(`我們寫的（未查證）${wantOurs.length - wantUnk} 題`) && got.head.includes(`看不出原因 ${wantUnk} 題`), got.head.slice(0, 160));
+        && got.blank === 0 && got.oursStart && got.plainNote && got.open === 0 && got.head.includes(`法規重點 ${wantExp.length} 題`) && got.head.includes(`我們寫的（未查證）${wantOurs.length} 題`) && got.head.includes(`沒有說明 ${wantPlain} 題`) && got.head.includes('不是漏做'), got.head.slice(0, 160));
       // 回到原本的期別頁：後面的檢查要在那一頁上做
       await gotoView(page, base + '#/study?cert=bic&view=browse&subject=law&period=47');
       await page.waitForSelector('.study-q .law-note');

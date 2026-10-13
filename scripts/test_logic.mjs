@@ -424,7 +424,7 @@ if (existsSync(real)) {
 // 教材（2026-10-13）：題號都要在包內；有說明的要有法規、條號、原文、快照、那一句；沒說明的要寫留白原因
 {
   const qs = [q('bic-law-t47-001'), q('bic-law-t47-002'), q('bic-law-t47-003')];
-  const ex = { law: '甲辦法', article: '第1條', version: '20211013', text: '條文原文', snapshot: 'data/local/law/text/x.txt', url: 'u', link: '所以是 (2)。' };
+  const ex = { law: '甲辦法', article: '第1條', version: '20211013', text: '條文原文', snapshot: 'data/local/law/text/x.txt', url: 'u', link: '所以是 (2)。', summary: '第1條：重點，所以是 (2)。' };
   const tb = items => ({ version: 1, status: 'draft', chapters: [{ id: 'T08', name: '信用卡', count: 3, explained: 1, items }, { id: 'T01', name: '其他章', count: 9 }] });
   const good = tb([{ id: 'bic-law-t47-001', explain: ex, variants: [{ id: 'bic-law-t47-002', blank: '題目沒有點名法規' }] }, { id: 'bic-law-t47-003', blank: '題目沒有點名法規' }]);
   const r = L.validateImportPack(pack(qs, { textbook: good }), ['bic']);

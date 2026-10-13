@@ -28,6 +28,7 @@ for _s in (sys.stdout, sys.stderr):
         pass
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import law_coverage as LC  # noqa: E402
+import textbook_summary_check as SC  # noqa: E402
 
 ROOT = Path(__file__).resolve().parent.parent
 L = ROOT / "data" / "local"
@@ -55,6 +56,15 @@ def main():
                 return 2
             b = json.loads(bf.read_text(encoding="utf-8"))
             basis = b["basis"]
+            # 法規重點摘要（使用者 2026-10-13：有法規依據的寫重點就好）：只用獨立代理核對「一致」、而且鎖定後沒被改過的
+            chk = SC.checked(c)
+            if chk is None:
+                print(f"TEXTBOOK ABORT：{c} 的法規重點摘要還沒經過獨立核對（scripts/textbook_summary_check.py），或核對後被改過")
+                return 2
+            summ, off = chk
+            if off or set(summ) != set(basis):
+                print(f"TEXTBOOK ABORT：{c} 的法規重點摘要有偏離或缺漏：{off or sorted(set(basis) ^ set(summ))}")
+                return 1
             of = D / f"ours-{c}.tsv"
             ours = {}
             if of.exists():
@@ -82,7 +92,10 @@ def main():
                 if i in basis:
                     x = basis[i]
                     it["explain"] = {"law": x["law"], "article": x["article"], "version": x["version"], "text": x["text"],
-                                     "snapshot": x["snapshot"], "url": x["url"], "link": x["link"]}
+                                     "snapshot": x["snapshot"], "url": x["url"], "link": x["link"], "summary": summ[i]}
+                elif i in ours and ours[i]["unknown"]:
+                    # 說不出比「規定就是這樣」更多的東西：整塊不要出現（使用者：看不懂、沒意義就刪掉）；章首另有一句說明
+                    it["plain"] = True
                 elif i in ours:
                     it["ours"] = ours[i]
                 elif not (act[i].get("law") or {}).get("laws"):
@@ -104,12 +117,12 @@ def main():
             allq = items + [v for it in items for v in it.get("variants", []) if not v.get("dup")]
             ch["explained"] = sum(1 for x in allq if "explain" in x)
             ch["ours"] = sum(1 for x in allq if "ours" in x)
-            ch["unknown"] = sum(1 for x in allq if x.get("ours", {}).get("unknown"))
+            ch["plain"] = sum(1 for x in allq if x.get("plain"))
             left = [x["id"] for x in allq if "blank" in x]
             if ours and left:
                 print(f"TEXTBOOK ABORT：{c} 還有 {len(left)} 題沒有乙也沒有丙（目標是不留白）：{left[:5]}")
                 return 1
-            extra = sorted(set(ours) - {x["id"] for x in allq if "ours" in x})
+            extra = sorted(set(ours) - {x["id"] for x in allq if "ours" in x or x.get("plain")})
             if extra:
                 print(f"TEXTBOOK ABORT：{of.name} 有 {len(extra)} 題寫了丙，但它們已經有乙（或不在本章）：{extra[:5]}")
                 return 1
@@ -125,7 +138,7 @@ def main():
     OUT.write_text(json.dumps(tb, ensure_ascii=False, indent=1), encoding="utf-8")
     for ch in chapters:
         if "items" in ch:
-            print(f"  {ch['name']}：{ch['count']} 題（{len(ch['items'])} 張卡）；乙（法規原文）{ch['explained']}、丙（我們寫的）{ch['ours']}，其中看不出 {ch['unknown']}；留白 {ch['count'] - ch['explained'] - ch['ours']}")
+            print(f"  {ch['name']}：{ch['count']} 題（{len(ch['items'])} 張卡）；法規重點 {ch['explained']}、我們寫的 {ch['ours']}、純背（不寫說明）{ch['plain']}；未處理 {ch['count'] - ch['explained'] - ch['ours'] - ch['plain']}")
     print(f"TEXTBOOK OK：{len(chapters)} 章（完整 {len(FILLED)} 章）→ {OUT}")
     return 0
 

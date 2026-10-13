@@ -94,7 +94,8 @@ export function validateImportPack(obj, knownCerts) {
         for (const it of c.items || []) for (const x of [it, ...(it.variants || [])]) {
           if (!x || !byId.has(x.id)) { errors.push(`${tag}：題號 ${x && x.id} 不在包內`); continue; }
           if (x.dup) continue;
-          if (x.explain) { const e = x.explain; if (![e.law, e.article, e.text, e.snapshot, e.link].every(v => typeof v === 'string' && v)) errors.push(`${tag}：${x.id} 的說明缺欄位`); }
+          if (x.explain) { const e = x.explain; if (![e.law, e.article, e.text, e.snapshot, e.link, e.summary].every(v => typeof v === 'string' && v)) errors.push(`${tag}：${x.id} 的說明缺欄位`); }
+          else if (x.plain === true) { /* 純背的題：不寫說明（章首有說明） */ }
           else if (x.ours) { if (typeof x.ours.text !== 'string' || !x.ours.text || typeof x.ours.unknown !== 'boolean') errors.push(`${tag}：${x.id} 的「我們寫的」格式不對`); }
           else if (typeof x.blank !== 'string' || !x.blank) errors.push(`${tag}：${x.id} 沒有說明也沒有寫留白原因`);
         }

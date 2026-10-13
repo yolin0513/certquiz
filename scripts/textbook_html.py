@@ -56,16 +56,19 @@ def main():
         return f'<p class="law {x["status"]}"><b class="{tag[0]}">{tag[1]}</b></p>'
 
     def explain(it):
+        if it.get("plain"):
+            return ""     # 純背的題：不寫說明（章首有一句說明）
         if "ours" in it:
             o = it["ours"]
             return (f'<div class="ours{" unknown" if o["unknown"] else ""}"><p><b>{"看不出原因：" if o["unknown"] else "我們寫的（未查證）："}</b>{esc(o["text"])}</p></div>')
         if "explain" in it:
             x = it["explain"]
             v = x["version"]
-            return (f'<div class="exp"><p><b>法規原文：</b>「{esc(x["law"])}」{esc(x["article"])}（考試當時 {v[:4]}-{v[4:6]}-{v[6:]} 版）</p>'
+            # 只寫重點；完整條文收在展開裡（預設不展開、程式不能執行時也不展開——它不是主要內容，但不刪，是唯一能複查摘要的東西）
+            return (f'<div class="exp"><p><b>法規重點：</b>{esc(x["summary"])}</p>'
+                    f'<details class="full"><summary>看條文全文（{esc(x["law"])}{esc(x["article"])}，考試當時 {v[:4]}-{v[4:6]}-{v[6:]} 版）</summary>'
                     f'<blockquote>{esc(x["text"])}</blockquote>'
-                    f'<p><b>我們寫的（未查證）：</b>{esc(x["link"])}</p>'
-                    f'<p class="src">來源：全國法規資料庫（2026-10-08 抓取），快照 <code>{esc(x["snapshot"])}</code></p></div>')
+                    f'<p class="src">來源：全國法規資料庫（2026-10-08 抓取），快照 <code>{esc(x["snapshot"])}</code></p></details></div>')
         return (f'<div class="blank"><p class="blank-h">說明：留白</p><p>原因：{esc(it.get("blank", ""))}。</p>'
                 '<p class="muted">你選的是「乙」：只有指得出外部依據（法規條文）時才寫說明；指不出來的就不寫，免得把我們沒查證的理解當成答案的理由。</p></div>')
 
@@ -73,7 +76,7 @@ def main():
         q = Q[it["id"]]
         opts = "".join(f"<li>{esc(o)}</li>" for o in q["options"])
         has = "explain" in it or "ours" in it
-        kind = "law" if "explain" in it else ("unknown" if it.get("ours", {}).get("unknown") else ("ours" if "ours" in it else "blank"))
+        kind = "law" if "explain" in it else ("plain" if it.get("plain") else ("ours" if "ours" in it else "blank"))
         return (f'<div class="{cls}" data-qid="{esc(q["id"])}" data-exp="{1 if has else 0}" data-kind="{kind}">'
                 f'<p class="stem">{esc(q["stem"])}</p><ol class="opts">{opts}</ol>'
                 f'<details class="ans" open><summary>答案與說明</summary>'
@@ -90,7 +93,7 @@ def main():
         cards.append(f'<section class="card item" data-point="{1 if it.get("point") else 0}" data-mark="">{head}{qblock(it)}{var}'
                      f'<div class="marks js-only" hidden><button type="button" data-m="read">讀過</button><button type="button" data-m="unsure">沒把握</button></div></section>')
     allq = ch["items"] + [v for it in ch["items"] for v in it.get("variants", []) if not v.get("dup")]
-    n, ne, no, nu = ch["count"], ch["explained"], ch.get("ours", 0), ch.get("unknown", 0)
+    n, ne, no, np_ = ch["count"], ch["explained"], ch.get("ours", 0), ch.get("plain", 0)
     chap_rows = "".join(f'<tr><td>{esc(c["name"])}</td><td class=num>{c["count"]}</td><td>{"這份草稿的樣本章" if "items" in c else ""}</td></tr>' for c in tb["chapters"])
     css = """
 :root{--bg:#f6f7f9;--paper:#fff;--fg:#1b2430;--muted:#556173;--line:#d8dee6;--pri:#1f5a8a;--pri-fg:#fff;--ok:#1d6b3a;--ok-bg:#e5f3ea;--ng:#a32a20;--ng-bg:#fbe7e5;--warn-bg:#fbf0dc;--f:"Noto Sans TC","PingFang TC","Microsoft JhengHei",system-ui,sans-serif}
@@ -137,7 +140,7 @@ label{font-size:.92rem}input,select{color:var(--fg);accent-color:var(--pri)}sele
   var q = document.getElementById('q'), fp = document.getElementById('f-point'), fk = document.getElementById('f-kind'), fu = document.getElementById('f-unsure'), cnt = document.getElementById('cnt');
   function apply(){ var s = (q.value || '').trim(); var n = 0;
     items.forEach(function(it){ var t = it.textContent; var k = it.querySelector('.q').getAttribute('data-kind'); var id = it.querySelector('.q').getAttribute('data-qid');
-      var kind = fk.value; var kok = !kind || (kind === 'ours' ? (k === 'ours' || k === 'unknown') : k === kind);
+      var kind = fk.value; var kok = !kind || k === kind;
       var ok = (!s || t.indexOf(s) >= 0) && (!fp.checked || it.getAttribute('data-point') === '1') && kok && (!fu.checked || (store[id] || {}).unsure);
       it.hidden = !ok; if (ok) n++; });
     cnt.textContent = '顯示 ' + n + '／' + items.length + ' 張'; }
@@ -156,12 +159,11 @@ label{font-size:.92rem}input,select{color:var(--fg);accent-color:var(--pri)}sele
 
 <section class="card"><h2>兩種說明怎麼分：信用卡這一章</h2>
 <ul>
-<li><b>法規原文 {ne} 題</b>：放考試當時那一版的條文原文（兩個判斷者都判條文寫出了正解，才放）。</li>
-<li><b>我們寫的（未查證）{no - nu} 題</b>：我們的理解，可能是錯的。</li>
-<li><b>看不出原因 {nu} 題</b>：多半是要記的數字或天數，我們說不出理由，就照實寫。</li>
+<li><b>法規重點 {ne} 題</b>：從考試當時那一版的條文濃縮成一句、標了條號（兩個判斷者都判條文寫出了正解，摘要另由一個獨立代理對照全文核對過）；完整條文可以展開看。</li>
+<li><b>我們寫的（未查證）{no} 題</b>：我們的理解，沒有外部依據，可能是錯的。</li>
+<li><b>沒有說明 {np_} 題</b>。</li>
 </ul>
-<div class="bar" role="img" aria-label="法規原文 {ne} 題、我們寫的 {no - nu} 題、看不出 {nu} 題"><span class="e" style="width:{ne / n * 100:.1f}%"></span><span class="o" style="width:{(no - nu) / n * 100:.1f}%"></span><span class="b" style="width:{nu / n * 100:.1f}%"></span></div>
-<p class="muted">每段說明前面都寫明是哪一種：「法規原文」「我們寫的（未查證）」「看不出原因」。</p>
+<p id="plain-note"><b>沒有說明的題＝純粹要背的數字或規定，我們說不出比「規定就是這樣」更多的理由——不是漏做。</b></p>
 <p><b>「我們寫的」怎麼寫</b>（每一題都照這三條）：只解釋為什麼官方正解是對的，不延伸補充；不寫法規名稱（那會讓它看起來像有依據）；拿不準就寫拿不準。<b>這一層可能是錯的</b>——它是我們的理解，沒有外部依據；跟你自己的理解或課本衝突時，以官方答案與法規為準。</p></section>
 
 <section class="card"><h2>分章方案</h2>
@@ -172,20 +174,20 @@ label{font-size:.92rem}input,select{color:var(--fg);accent-color:var(--pri)}sele
 <section class="card"><h2>互動設計</h2>
 <ul>
 <li><b>預設收合、點了展開</b>：答案與說明先收起來，先自己想。網頁程式不能執行時，全部改成展開（上面那段說明）。</li>
-<li><b>搜尋</b>、<b>只看反覆考過的</b>、<b>依說明種類篩選</b>（法規原文／我們寫的／看不出）、<b>只看沒把握的</b>。</li>
+<li><b>搜尋</b>、<b>只看反覆考過的</b>、<b>依說明種類篩選</b>（法規重點／我們寫的／沒有說明）、<b>只看沒把握的</b>。</li>
 <li><b>讀過／沒把握</b>：存在這台電腦的瀏覽器裡。手機上的 App 版則跟錯題、弱點複習、「答案有疑問」接在一起，也會跟著備份走。</li>
 <li><b>App 版樣本</b>：匯入新版的內控匯入包後，App 的「讀書」多一個「教材（草稿）」，內容與這一頁同一份資料。</li>
 </ul>
 <p class="muted">不列年份：畫面上不寫哪一期；每題的出處（期別、題號、頁碼）我們內部仍保留在題號裡與對照檔，之後複查、處理你回報的「答案有疑問」時要用。</p></section>
 
 <div class="tools js-only" hidden><input type="search" id="q" placeholder="搜尋（例如：循環信用）" aria-label="搜尋">
-<label><input type="checkbox" id="f-point"> 只看反覆考過的</label><label>說明種類 <select id="f-kind"><option value="">全部</option><option value="law">法規原文</option><option value="ours">我們寫的（未查證，含看不出原因）</option><option value="unknown">看不出原因</option></select></label><label><input type="checkbox" id="f-unsure"> 只看沒把握的</label>
+<label><input type="checkbox" id="f-point"> 只看反覆考過的</label><label>說明種類 <select id="f-kind"><option value="">全部</option><option value="law">法規重點</option><option value="ours">我們寫的（未查證）</option><option value="plain">沒有說明</option></select></label><label><input type="checkbox" id="f-unsure"> 只看沒把握的</label>
 <button type="button" id="open-all">全部展開</button><button type="button" id="close-all">全部收起</button><span class="muted" id="cnt"></span></div>
 <h2>信用卡（{n} 題）</h2>
 {''.join(cards)}
 </main><script>{js}</script></body></html>"""
     OUT.write_text(page, encoding="utf-8")
-    print(f"TEXTBOOK-HTML OK：{ch['name']} {n} 題、{len(cards)} 張卡；法規原文 {ne}、我們寫的 {no}（看不出 {nu}）→ {OUT}")
+    print(f"TEXTBOOK-HTML OK：{ch['name']} {n} 題、{len(cards)} 張卡；法規重點 {ne}、我們寫的 {no}、沒有說明 {np_} → {OUT}")
     return 0
 
 
