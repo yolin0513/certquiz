@@ -116,3 +116,8 @@ details summary { cursor: pointer; margin: 6px 0; }
 details .tb-q { border-top: 1px dashed var(--line); padding-top: 6px; margin-top: 6px; }
 /* 教材裡的法規那一行不加框：避免跟「說明：留白」的虛線框長得一樣（兩件不同的事，2026-10-13 看截圖發現） */
 .tb-ans .law-note.partial, .tb-ans .law-note.none { border: 0; padding: 0; }
+/* 丙（我們寫的，未經查證）：整塊點線框＋固定開頭字樣；跟乙（左邊實線＋條文引文）形狀不同，不只靠顏色 */
+.tb-ours { border: 2px dotted var(--fg); border-radius: 12px; padding: 8px 12px; margin: 8px 0; }
+.tb-ours.unknown { border-style: dotted; background: var(--bg); }
+.tb-bar .o { background: radial-gradient(circle, var(--fg) 1.2px, transparent 1.4px) 0 0 / 6px 6px; }
+.tb-stats { margin: 6px 0; padding-left: 1.2em; }

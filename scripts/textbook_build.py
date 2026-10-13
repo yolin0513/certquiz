@@ -8,10 +8,15 @@
     python scripts/build_data.py --local     → 匯入包多一個 textbook 欄位（App 的「教材」）
 
 內容：章（目前用主題分組實驗凍結的規則；正式版逐題歸類）→ 每章先放反覆考過的規定，再放其他題。
-說明只照「乙」：兩個判斷者都說條文對得上、條號相同（basis-<章>.json）才有；其他題留白，並寫出留白的原因類別。
+說明是「乙＋丙」（使用者 2026-10-13 定案）：
+  乙＝兩個判斷者都說條文對得上、條號相同（basis-<章>.json）→ 放條文原文；
+  丙＝其餘的題，我們寫的理解（ours-<章>.tsv），畫面標「我們寫的，未經查證」；拿不準就寫「看不出」，不硬寫。
+丙的紀律（docs/STATUS「教材」）：只解釋為什麼官方正解是對的、不延伸；不寫法規名稱（會看起來像有依據）；拿不準寫看不出。
+建置時機械檢查：丙的段落不得出現「」括起來的法規名稱、不得出現「依據」兩個字；本章每一題都要有乙或丙（不留白）。
 題目文字不進 textbook.json（只放題號）；App 從匯入的題目取文字，HTML 從匯入包取。
 """
 import json
+import re
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -29,6 +34,7 @@ L = ROOT / "data" / "local"
 D = L / "教材"
 OUT = D / "textbook.json"
 FILLED = ["T08"]          # 草稿只做完整的一章（信用卡）；其他章只列題數
+LAWNAME = re.compile(r"「[^」]*(辦法|準則|規則|要點|注意事項|公約|條例|法)」|依據")
 
 
 def main():
@@ -49,6 +55,19 @@ def main():
                 return 2
             b = json.loads(bf.read_text(encoding="utf-8"))
             basis = b["basis"]
+            of = D / f"ours-{c}.tsv"
+            ours = {}
+            if of.exists():
+                for line in of.read_text(encoding="utf-8").splitlines()[1:]:
+                    if line.strip():
+                        qid, kind, text = (line.split("\t") + ["", ""])[:3]
+                        if kind not in ("說明", "看不出") or not text.strip():
+                            print(f"TEXTBOOK ABORT：{of.name} 的 {qid} 類別或內容不對")
+                            return 2
+                        if LAWNAME.search(text):
+                            print(f"TEXTBOOK ABORT：{of.name} 的 {qid}（丙，未經查證）出現法規名稱或「依據」——會看起來像有依據：{LAWNAME.search(text).group(0)}")
+                            return 2
+                        ours[qid] = {"text": text.strip(), "unknown": kind == "看不出"}
             items, used = [], set()
             pts = sorted([p for p in pack["points"] if any(i in ids for i in p["ids"])], key=lambda p: (-len(p["periods"]), p["id"]))
             for p in pts:
@@ -64,6 +83,8 @@ def main():
                     x = basis[i]
                     it["explain"] = {"law": x["law"], "article": x["article"], "version": x["version"], "text": x["text"],
                                      "snapshot": x["snapshot"], "url": x["url"], "link": x["link"]}
+                elif i in ours:
+                    it["ours"] = ours[i]
                 elif not (act[i].get("law") or {}).get("laws"):
                     it["blank"] = "題目沒有點名法規"
                 elif i not in el:
@@ -82,19 +103,29 @@ def main():
             ch["items"] = items
             allq = items + [v for it in items for v in it.get("variants", []) if not v.get("dup")]
             ch["explained"] = sum(1 for x in allq if "explain" in x)
+            ch["ours"] = sum(1 for x in allq if "ours" in x)
+            ch["unknown"] = sum(1 for x in allq if x.get("ours", {}).get("unknown"))
+            left = [x["id"] for x in allq if "blank" in x]
+            if ours and left:
+                print(f"TEXTBOOK ABORT：{c} 還有 {len(left)} 題沒有乙也沒有丙（目標是不留白）：{left[:5]}")
+                return 1
+            extra = sorted(set(ours) - {x["id"] for x in allq if "ours" in x})
+            if extra:
+                print(f"TEXTBOOK ABORT：{of.name} 有 {len(extra)} 題寫了丙，但它們已經有乙（或不在本章）：{extra[:5]}")
+                return 1
             # 母體核對：這一章每一題都出現一次（代表題或其他問法）
             seen = [x["id"] for x in allq]
             if sorted(set(seen) & set(ids)) != ids:
                 print(f"TEXTBOOK ABORT：{c} 的題目沒有全部出現（少 {sorted(set(ids) - set(seen))[:5]}）")
                 return 1
         chapters.append(ch)
-    tb = {"version": 1, "generated": datetime.now().strftime("%Y-%m-%d"), "status": "draft", "tier": "乙",
+    tb = {"version": 1, "generated": datetime.now().strftime("%Y-%m-%d"), "status": "draft", "tier": "乙＋丙",
           "chapterRule": "主題分組實驗凍結的關鍵字規則（草稿；正式版逐題歸類）", "chapters": chapters}
     D.mkdir(parents=True, exist_ok=True)
     OUT.write_text(json.dumps(tb, ensure_ascii=False, indent=1), encoding="utf-8")
     for ch in chapters:
         if "items" in ch:
-            print(f"  {ch['name']}：{ch['count']} 題（{len(ch['items'])} 張卡）；有說明 {ch['explained']}、留白 {ch['count'] - ch['explained']}")
+            print(f"  {ch['name']}：{ch['count']} 題（{len(ch['items'])} 張卡）；乙（法規原文）{ch['explained']}、丙（我們寫的）{ch['ours']}，其中看不出 {ch['unknown']}；留白 {ch['count'] - ch['explained'] - ch['ours']}")
     print(f"TEXTBOOK OK：{len(chapters)} 章（完整 {len(FILLED)} 章）→ {OUT}")
     return 0
 

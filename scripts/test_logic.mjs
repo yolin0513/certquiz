@@ -440,6 +440,10 @@ if (existsSync(real)) {
     check(`教材：${d} → 整包不收、點名「${why}」`, !rr.ok && rr.errors.some(e => e.includes(why)), rr.errors.join('；'));
   }
   check('教材：沒有教材的匯入包 → textbook 是 null', L.validateImportPack(pack(qs), ['bic']).textbook === null);
+  const mixed = tb([{ id: 'bic-law-t47-001', explain: ex, variants: [{ id: 'bic-law-t47-002', ours: { text: '我們的理解', unknown: false } }] }, { id: 'bic-law-t47-003', ours: { text: '要記的數字', unknown: true } }]);
+  check('教材（乙＋丙）：法規原文＋我們寫的（含看不出）通過', L.validateImportPack(pack(qs, { textbook: mixed }), ['bic']).ok);
+  check('教材（乙＋丙）：我們寫的缺「看不出」旗標 → 擋', !L.validateImportPack(pack(qs, { textbook: tb([{ id: 'bic-law-t47-001', ours: { text: 'x' } }]) }), ['bic']).ok);
+  check('教材（乙＋丙）：我們寫的內容是空的 → 擋', !L.validateImportPack(pack(qs, { textbook: tb([{ id: 'bic-law-t47-001', ours: { text: '', unknown: true } }]) }), ['bic']).ok);
 }
 
 console.log(fails ? `TEST-LOGIC FAILED：${fails} 項不符` : 'TEST-LOGIC OK：全部符合');

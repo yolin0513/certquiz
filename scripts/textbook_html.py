@@ -56,10 +56,14 @@ def main():
         return f'<p class="law {x["status"]}"><b class="{tag[0]}">{tag[1]}</b></p>'
 
     def explain(it):
+        if "ours" in it:
+            o = it["ours"]
+            return (f'<div class="ours{" unknown" if o["unknown"] else ""}"><p><b>我們寫的，未經查證：</b>'
+                    f'{"<b>這題我們也看不出為什麼。</b>" if o["unknown"] else ""}{esc(o["text"])}</p></div>')
         if "explain" in it:
             x = it["explain"]
             v = x["version"]
-            return (f'<div class="exp"><p class="exp-h">說明（有依據）</p><p>{esc(x["link"])}<span class="muted">（這一句是我們寫的，把條文接到答案）</span></p>'
+            return (f'<div class="exp"><p class="exp-h">法規原文（有依據）</p><p>{esc(x["link"])}<span class="muted">（這一句是我們寫的，把條文接到答案）</span></p>'
                     f'<p class="muted">依據：「{esc(x["law"])}」{esc(x["article"])}，這題考試當時的版本（{v[:4]}-{v[4:6]}-{v[6:]}）。原文：</p>'
                     f'<blockquote>{esc(x["text"])}</blockquote>'
                     f'<p class="src">原文來源：全國法規資料庫該版全文（2026-10-08 抓取），快照 <code>{esc(x["snapshot"])}</code></p></div>')
@@ -69,8 +73,9 @@ def main():
     def qblock(it, cls="q"):
         q = Q[it["id"]]
         opts = "".join(f"<li>{esc(o)}</li>" for o in q["options"])
-        has = "explain" in it
-        return (f'<div class="{cls}" data-qid="{esc(q["id"])}" data-exp="{1 if has else 0}">'
+        has = "explain" in it or "ours" in it
+        kind = "law" if "explain" in it else ("unknown" if it.get("ours", {}).get("unknown") else ("ours" if "ours" in it else "blank"))
+        return (f'<div class="{cls}" data-qid="{esc(q["id"])}" data-exp="{1 if has else 0}" data-kind="{kind}">'
                 f'<p class="stem">{esc(q["stem"])}</p><ol class="opts">{opts}</ol>'
                 f'<details class="ans" open><summary>答案與說明</summary>'
                 f'<p class="right-ans">官方正解：({q["answer"]}) {esc(q["options"][q["answer"] - 1])}</p>{explain(it)}{law_note(q)}</details></div>')
@@ -86,11 +91,7 @@ def main():
         cards.append(f'<section class="card item" data-point="{1 if it.get("point") else 0}" data-mark="">{head}{qblock(it)}{var}'
                      f'<div class="marks js-only" hidden><button type="button" data-m="read">讀過</button><button type="button" data-m="unsure">沒把握</button></div></section>')
     allq = ch["items"] + [v for it in ch["items"] for v in it.get("variants", []) if not v.get("dup")]
-    reasons = {}
-    for x in allq:
-        if "blank" in x:
-            reasons[x["blank"]] = reasons.get(x["blank"], 0) + 1
-    n, ne = ch["count"], ch["explained"]
+    n, ne, no, nu = ch["count"], ch["explained"], ch.get("ours", 0), ch.get("unknown", 0)
     chap_rows = "".join(f'<tr><td>{esc(c["name"])}</td><td class=num>{c["count"]}</td><td>{"這份草稿的樣本章" if "items" in c else ""}</td></tr>' for c in tb["chapters"])
     css = """
 :root{--bg:#f6f7f9;--paper:#fff;--fg:#1b2430;--muted:#556173;--line:#d8dee6;--pri:#1f5a8a;--pri-fg:#fff;--ok:#1d6b3a;--ok-bg:#e5f3ea;--ng:#a32a20;--ng-bg:#fbe7e5;--warn-bg:#fbf0dc;--f:"Noto Sans TC","PingFang TC","Microsoft JhengHei",system-ui,sans-serif}
@@ -107,6 +108,8 @@ p{margin:6px 0}.muted{color:var(--muted);font-size:.9rem}.src{color:var(--muted)
 details{margin:8px 0}summary{cursor:pointer;color:var(--pri);font-weight:600;padding:4px 0}.right-ans{color:var(--ok);font-weight:700}
 .exp{border-left:3px solid var(--ok);padding-left:10px;margin:8px 0}.exp-h{color:var(--ok);font-weight:700;margin:0}
 blockquote{margin:6px 0;padding:6px 10px;border-left:3px solid var(--muted);white-space:pre-wrap}
+.ours{border:2px dotted var(--fg);border-radius:12px;padding:8px 12px;margin:8px 0}.ours.unknown{background:var(--bg)}
+.bar .o{background:radial-gradient(circle,var(--fg) 1.2px,transparent 1.4px) 0 0/6px 6px}
 .blank{border:2px dashed var(--muted);border-radius:10px;padding:8px 12px;margin:8px 0}.blank-h{font-weight:700;margin:0}
 .badge{display:inline-block;font-size:.85rem;padding:2px 10px;border-radius:999px;background:var(--ok-bg);color:var(--ok);margin:0 0 6px}
 .law{font-size:.9rem;color:var(--muted)}.law.amended{color:var(--fg);border:2px solid var(--ng);background:var(--ng-bg);border-radius:8px;padding:6px 10px}.law .ok{color:var(--ok)}
@@ -116,7 +119,7 @@ blockquote{margin:6px 0;padding:6px 10px;border-left:3px solid var(--muted);whit
 button{font:inherit;padding:6px 12px;border-radius:8px;border:1px solid var(--line);background:var(--paper);color:var(--fg);cursor:pointer}
 button[aria-pressed="true"]{background:var(--pri);color:var(--pri-fg);border-color:var(--pri)}
 .marks{display:flex;gap:8px;margin-top:8px}.item[data-mark~="read"]{opacity:.75}.item[data-mark~="unsure"]{border-color:var(--ng)}
-label{font-size:.92rem}input{color:var(--fg);accent-color:var(--pri)}[hidden]{display:none!important}.nojs{border:2px solid var(--pri)}
+label{font-size:.92rem}input,select{color:var(--fg);accent-color:var(--pri)}select{font:inherit;background:var(--paper);border:1px solid var(--line);border-radius:8px;padding:4px}[hidden]{display:none!important}.nojs{border:2px solid var(--pri)}
 """
     js = """
 (function(){
@@ -132,13 +135,14 @@ label{font-size:.92rem}input{color:var(--fg);accent-color:var(--pri)}[hidden]{di
     it.querySelectorAll('.marks button').forEach(function(b){ b.setAttribute('aria-pressed', m[b.getAttribute('data-m')] ? 'true' : 'false'); }); }
   items.forEach(function(it){ paint(it); it.querySelectorAll('.marks button').forEach(function(b){ b.addEventListener('click', function(){
     var id = it.querySelector('.q').getAttribute('data-qid'); var m = store[id] || {}; var k = b.getAttribute('data-m'); m[k] = !m[k]; store[id] = m; save(); paint(it); apply(); }); }); });
-  var q = document.getElementById('q'), fp = document.getElementById('f-point'), fe = document.getElementById('f-exp'), fb = document.getElementById('f-blank'), fu = document.getElementById('f-unsure'), cnt = document.getElementById('cnt');
+  var q = document.getElementById('q'), fp = document.getElementById('f-point'), fk = document.getElementById('f-kind'), fu = document.getElementById('f-unsure'), cnt = document.getElementById('cnt');
   function apply(){ var s = (q.value || '').trim(); var n = 0;
-    items.forEach(function(it){ var t = it.textContent; var e = it.querySelector('.q').getAttribute('data-exp') === '1'; var id = it.querySelector('.q').getAttribute('data-qid');
-      var ok = (!s || t.indexOf(s) >= 0) && (!fp.checked || it.getAttribute('data-point') === '1') && (!fe.checked || e) && (!fb.checked || !e) && (!fu.checked || (store[id] || {}).unsure);
+    items.forEach(function(it){ var t = it.textContent; var k = it.querySelector('.q').getAttribute('data-kind'); var id = it.querySelector('.q').getAttribute('data-qid');
+      var kind = fk.value; var kok = !kind || (kind === 'ours' ? (k === 'ours' || k === 'unknown') : k === kind);
+      var ok = (!s || t.indexOf(s) >= 0) && (!fp.checked || it.getAttribute('data-point') === '1') && kok && (!fu.checked || (store[id] || {}).unsure);
       it.hidden = !ok; if (ok) n++; });
     cnt.textContent = '顯示 ' + n + '／' + items.length + ' 張'; }
-  [q, fp, fe, fb, fu].forEach(function(e){ e.addEventListener('input', apply); e.addEventListener('change', apply); });
+  [q, fp, fk, fu].forEach(function(e){ e.addEventListener('input', apply); e.addEventListener('change', apply); });
   document.getElementById('open-all').addEventListener('click', function(){ document.querySelectorAll('details.ans').forEach(function(d){ d.open = true; }); });
   document.getElementById('close-all').addEventListener('click', function(){ document.querySelectorAll('details.ans, details.var').forEach(function(d){ d.open = false; }); });
   apply();
@@ -148,15 +152,18 @@ label{font-size:.92rem}input{color:var(--fg);accent-color:var(--pri)}[hidden]{di
     page = f"""<!doctype html><html lang="zh-Hant"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="robots" content="noindex"><title>內控教材草稿</title><style>{css}</style></head><body><main>
 <h1>教材草稿（請你確認再開工）</h1>
-<p class="muted">照你的選擇做：解答說明「乙」（指得出外部依據才寫）；HTML（電腦上看）與 App（手機上看）都做，兩邊用同一份資料產生。產生時間 {esc(datetime.now().strftime("%Y-%m-%d %H:%M"))}。題目原文只放在你自己的裝置，不要轉貼。</p>
+<p class="muted">照你的選擇做：解答說明「乙＋丙」——指得出法規條文的放條文原文，其餘寫我們的理解並標「未經查證」；HTML（電腦上看）與 App（手機上看）都做，兩邊用同一份資料產生。產生時間 {esc(datetime.now().strftime("%Y-%m-%d %H:%M"))}。題目原文只放在你自己的裝置，不要轉貼。</p>
 <section class="card nojs" id="nojs"><p><b>如果你看不到搜尋框和按鈕</b>：表示這個瀏覽器沒有執行網頁程式（例如 iPhone 的「檔案」App 預覽）。內容仍然全部列出——答案和說明都已經展開，可以直接往下讀。手機上要互動，請用 App 裡的「讀書 → 教材」。</p></section>
 
-<section class="card"><h2>乙實際的樣子：信用卡這一章</h2>
-<p><b>{n} 題裡，有說明的 {ne} 題（{pct(ne, n)}），留白 {n - ne} 題（{pct(n - ne, n)}）。</b></p>
-<div class="bar" role="img" aria-label="有說明 {ne} 題、留白 {n - ne} 題"><span class="e" style="width:{ne / n * 100:.1f}%"></span><span class="b" style="width:{(n - ne) / n * 100:.1f}%"></span></div>
-<p class="muted">實心＝有說明；斜線＝留白。留白的原因：{"、".join(f"{esc(k)} {v} 題" for k, v in sorted(reasons.items(), key=lambda kv: -kv[1]))}。</p>
-<p><b>留白會是常態，不是例外。</b>信用卡這章算是法規題比較多的一章，還是有四分之三留白；整份內控大約只有 13% 的題指得出法規條文（法規科約 24%、實務科約 6%），金融市場常識與職業道德最多約 {cross / len(ethics):.0%}（{cross}／{len(ethics)} 題：正解那句話在題庫別題也當正解，而且這只是上限）。<b>如果看了覺得留白太多、想改成「每題都寫，指不出依據的標未經查證」（丙），請在開工前告訴我們。</b></p>
-<p class="muted">有說明的那 {ne} 題：兩個判斷者（都是 Claude）各自讀了考試當時那一版的法規全文，都判「條文寫出了正解的關鍵內容」、而且條號相同，才寫。一致不等於一定對。</p></section>
+<section class="card"><h2>兩種說明怎麼分：信用卡這一章</h2>
+<ul>
+<li><b>法規原文（有依據）{ne} 題</b>：左邊一條實線、條文縮排引用；開頭固定是「法規原文（有依據）」。兩個判斷者（都是 Claude）各自讀了考試當時那一版的法規全文，都判「條文寫出了正解的關鍵內容」、而且條號相同，才放。</li>
+<li><b>我們寫的，未經查證 {no} 題</b>：整塊點線框；每一段都以「<b>我們寫的，未經查證：</b>」開頭，捲到一半也知道自己在讀哪一種。</li>
+<li>其中 <b>「這題我們也看不出為什麼」{nu} 題</b>：大多是要記的數字或天數，我們說不出比「規定就是這樣」更多的理由，就照實寫，不硬編。</li>
+</ul>
+<div class="bar" role="img" aria-label="法規原文 {ne} 題、我們寫的 {no - nu} 題、看不出 {nu} 題"><span class="e" style="width:{ne / n * 100:.1f}%"></span><span class="o" style="width:{(no - nu) / n * 100:.1f}%"></span><span class="b" style="width:{nu / n * 100:.1f}%"></span></div>
+<p class="muted">實心＝法規原文；點點＝我們寫的；斜線＝看不出。「看不出」的題數是這份教材的誠實指標：我們不為了填滿而硬寫。</p>
+<p><b>「我們寫的」怎麼寫</b>（每一題都照這三條）：只解釋為什麼官方正解是對的，不延伸補充；不寫法規名稱（那會讓它看起來像有依據）；拿不準就寫拿不準。<b>這一層可能是錯的</b>——它是我們的理解，沒有外部依據；跟你自己的理解或課本衝突時，以官方答案與法規為準。</p></section>
 
 <section class="card"><h2>分章方案</h2>
 <p><b>分章是為了好讀、好找，不是驗證過的學習單位</b>（量過：同一組讀懂一題對答對另一題有幫助的只有 11%）。章名來自官方簡章的命題範圍、依題庫實際內容拆細；題數是草稿用的關鍵字規則，<b>正式版會逐題歸章，題數會變</b>。</p>
@@ -166,20 +173,20 @@ label{font-size:.92rem}input{color:var(--fg);accent-color:var(--pri)}[hidden]{di
 <section class="card"><h2>互動設計</h2>
 <ul>
 <li><b>預設收合、點了展開</b>：答案與說明先收起來，先自己想。網頁程式不能執行時，全部改成展開（上面那段說明）。</li>
-<li><b>搜尋</b>、<b>只看反覆考過的</b>、<b>只看有說明的</b>／<b>只看留白的</b>、<b>只看沒把握的</b>。</li>
+<li><b>搜尋</b>、<b>只看反覆考過的</b>、<b>依說明種類篩選</b>（法規原文／我們寫的／看不出）、<b>只看沒把握的</b>。</li>
 <li><b>讀過／沒把握</b>：存在這台電腦的瀏覽器裡。手機上的 App 版則跟錯題、弱點複習、「答案有疑問」接在一起，也會跟著備份走。</li>
 <li><b>App 版樣本</b>：匯入新版的內控匯入包後，App 的「讀書」多一個「教材（草稿）」，內容與這一頁同一份資料。</li>
 </ul>
 <p class="muted">不列年份：畫面上不寫哪一期；每題的出處（期別、題號、頁碼）我們內部仍保留在題號裡與對照檔，之後複查、處理你回報的「答案有疑問」時要用。</p></section>
 
 <div class="tools js-only" hidden><input type="search" id="q" placeholder="搜尋（例如：循環信用）" aria-label="搜尋">
-<label><input type="checkbox" id="f-point"> 只看反覆考過的</label><label><input type="checkbox" id="f-exp"> 只看有說明的</label><label><input type="checkbox" id="f-blank"> 只看留白的</label><label><input type="checkbox" id="f-unsure"> 只看沒把握的</label>
+<label><input type="checkbox" id="f-point"> 只看反覆考過的</label><label>說明種類 <select id="f-kind"><option value="">全部</option><option value="law">法規原文</option><option value="ours">我們寫的（含看不出）</option><option value="unknown">看不出</option></select></label><label><input type="checkbox" id="f-unsure"> 只看沒把握的</label>
 <button type="button" id="open-all">全部展開</button><button type="button" id="close-all">全部收起</button><span class="muted" id="cnt"></span></div>
 <h2>信用卡（{n} 題）</h2>
 {''.join(cards)}
 </main><script>{js}</script></body></html>"""
     OUT.write_text(page, encoding="utf-8")
-    print(f"TEXTBOOK-HTML OK：{ch['name']} {n} 題、{len(cards)} 張卡；有說明 {ne}、留白 {n - ne}（{reasons}）→ {OUT}")
+    print(f"TEXTBOOK-HTML OK：{ch['name']} {n} 題、{len(cards)} 張卡；法規原文 {ne}、我們寫的 {no}（看不出 {nu}）→ {OUT}")
     return 0
 
 
