@@ -49,14 +49,14 @@ async function main() {
         ans: qs.filter(q => vis(q.querySelector('.right-ans'))).length,
         expOrBlank: qs.filter(q => vis(q.querySelector('.exp')) || vis(q.querySelector('.ours')) || vis(q.querySelector('.blank'))).length,
         kinds: Object.fromEntries(qs.map(q => [q.getAttribute('data-qid'), q.getAttribute('data-kind')])),
-        oursStart: qs.filter(q => q.querySelector('.ours')).every(q => q.querySelector('.ours').textContent.startsWith('我們寫的，未經查證：')),
-        lawStart: qs.filter(q => q.querySelector('.exp')).every(q => q.querySelector('.exp').textContent.startsWith('法規原文（有依據）')),
+        oursStart: qs.filter(q => q.querySelector('.ours')).every(q => { const t = q.querySelector('.ours').textContent; return q.getAttribute('data-kind') === 'unknown' ? t.startsWith('看不出原因：') : t.startsWith('我們寫的（未查證）：'); }),
+        lawStart: qs.filter(q => q.querySelector('.exp')).every(q => q.querySelector('.exp').textContent.startsWith('法規原文：') && q.querySelector('.exp').textContent.includes('我們寫的（未查證）：')),
         exp: qs.filter(q => vis(q.querySelector('.exp'))).map(q => q.getAttribute('data-qid')).sort(),
         tools: vis(document.querySelector('.tools')), nojs: vis(document.getElementById('nojs')) };
     });
     check(`關掉 JavaScript：${r0.n} 題每一題的官方正解都看得到（${r0.ans}）、說明都看得到（${r0.expOrBlank}）`, r0.n === want.length && r0.ans === r0.n && r0.expOrBlank === r0.n);
     check('每一題的說明種類（法規原文／我們寫的／看不出）＝textbook.json；沒有留白', JSON.stringify(r0.kinds) === JSON.stringify(Object.fromEntries(Object.keys(r0.kinds).map(k => [k, wantKinds[k]]))) && !Object.values(r0.kinds).includes('blank'));
-    check('固定開頭字樣：每段「我們寫的」都以「我們寫的，未經查證：」開頭；每段法規原文都以「法規原文（有依據）」開頭', r0.oursStart && r0.lawStart);
+    check('中文標示（主要的區分手段）：每段都以「法規原文：」「我們寫的（未查證）：」「看不出原因：」其中之一開頭，種類對得上；法規原文後面接的那句也標「我們寫的（未查證）」', r0.oursStart && r0.lawStart);
     check(`關掉 JavaScript：法規原文的 ${r0.exp.length} 題＝textbook.json 裡有依據的 ${wantExp.size} 題`, JSON.stringify(r0.exp) === JSON.stringify([...wantExp].sort()));
     check('關掉 JavaScript：搜尋與按鈕不出現；頁首寫明為什麼看不到按鈕', !r0.tools && r0.nojs);
     check(`同一份來源：頁面上的題號＝textbook.json 那一章的 ${want.length} 題（不多不少）`, JSON.stringify(r0.ids) === JSON.stringify(want));

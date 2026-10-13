@@ -58,15 +58,14 @@ def main():
     def explain(it):
         if "ours" in it:
             o = it["ours"]
-            return (f'<div class="ours{" unknown" if o["unknown"] else ""}"><p><b>我們寫的，未經查證：</b>'
-                    f'{"<b>這題我們也看不出為什麼。</b>" if o["unknown"] else ""}{esc(o["text"])}</p></div>')
+            return (f'<div class="ours{" unknown" if o["unknown"] else ""}"><p><b>{"看不出原因：" if o["unknown"] else "我們寫的（未查證）："}</b>{esc(o["text"])}</p></div>')
         if "explain" in it:
             x = it["explain"]
             v = x["version"]
-            return (f'<div class="exp"><p class="exp-h">法規原文（有依據）</p><p>{esc(x["link"])}<span class="muted">（這一句是我們寫的，把條文接到答案）</span></p>'
-                    f'<p class="muted">依據：「{esc(x["law"])}」{esc(x["article"])}，這題考試當時的版本（{v[:4]}-{v[4:6]}-{v[6:]}）。原文：</p>'
+            return (f'<div class="exp"><p><b>法規原文：</b>「{esc(x["law"])}」{esc(x["article"])}（考試當時 {v[:4]}-{v[4:6]}-{v[6:]} 版）</p>'
                     f'<blockquote>{esc(x["text"])}</blockquote>'
-                    f'<p class="src">原文來源：全國法規資料庫該版全文（2026-10-08 抓取），快照 <code>{esc(x["snapshot"])}</code></p></div>')
+                    f'<p><b>我們寫的（未查證）：</b>{esc(x["link"])}</p>'
+                    f'<p class="src">來源：全國法規資料庫（2026-10-08 抓取），快照 <code>{esc(x["snapshot"])}</code></p></div>')
         return (f'<div class="blank"><p class="blank-h">說明：留白</p><p>原因：{esc(it.get("blank", ""))}。</p>'
                 '<p class="muted">你選的是「乙」：只有指得出外部依據（法規條文）時才寫說明；指不出來的就不寫，免得把我們沒查證的理解當成答案的理由。</p></div>')
 
@@ -157,12 +156,12 @@ label{font-size:.92rem}input,select{color:var(--fg);accent-color:var(--pri)}sele
 
 <section class="card"><h2>兩種說明怎麼分：信用卡這一章</h2>
 <ul>
-<li><b>法規原文（有依據）{ne} 題</b>：左邊一條實線、條文縮排引用；開頭固定是「法規原文（有依據）」。兩個判斷者（都是 Claude）各自讀了考試當時那一版的法規全文，都判「條文寫出了正解的關鍵內容」、而且條號相同，才放。</li>
-<li><b>我們寫的，未經查證 {no} 題</b>：整塊點線框；每一段都以「<b>我們寫的，未經查證：</b>」開頭，捲到一半也知道自己在讀哪一種。</li>
-<li>其中 <b>「這題我們也看不出為什麼」{nu} 題</b>：大多是要記的數字或天數，我們說不出比「規定就是這樣」更多的理由，就照實寫，不硬編。</li>
+<li><b>法規原文 {ne} 題</b>：放考試當時那一版的條文原文（兩個判斷者都判條文寫出了正解，才放）。</li>
+<li><b>我們寫的（未查證）{no - nu} 題</b>：我們的理解，可能是錯的。</li>
+<li><b>看不出原因 {nu} 題</b>：多半是要記的數字或天數，我們說不出理由，就照實寫。</li>
 </ul>
 <div class="bar" role="img" aria-label="法規原文 {ne} 題、我們寫的 {no - nu} 題、看不出 {nu} 題"><span class="e" style="width:{ne / n * 100:.1f}%"></span><span class="o" style="width:{(no - nu) / n * 100:.1f}%"></span><span class="b" style="width:{nu / n * 100:.1f}%"></span></div>
-<p class="muted">實心＝法規原文；點點＝我們寫的；斜線＝看不出。「看不出」的題數是這份教材的誠實指標：我們不為了填滿而硬寫。</p>
+<p class="muted">每段說明前面都寫明是哪一種：「法規原文」「我們寫的（未查證）」「看不出原因」。</p>
 <p><b>「我們寫的」怎麼寫</b>（每一題都照這三條）：只解釋為什麼官方正解是對的，不延伸補充；不寫法規名稱（那會讓它看起來像有依據）；拿不準就寫拿不準。<b>這一層可能是錯的</b>——它是我們的理解，沒有外部依據；跟你自己的理解或課本衝突時，以官方答案與法規為準。</p></section>
 
 <section class="card"><h2>分章方案</h2>
@@ -180,7 +179,7 @@ label{font-size:.92rem}input,select{color:var(--fg);accent-color:var(--pri)}sele
 <p class="muted">不列年份：畫面上不寫哪一期；每題的出處（期別、題號、頁碼）我們內部仍保留在題號裡與對照檔，之後複查、處理你回報的「答案有疑問」時要用。</p></section>
 
 <div class="tools js-only" hidden><input type="search" id="q" placeholder="搜尋（例如：循環信用）" aria-label="搜尋">
-<label><input type="checkbox" id="f-point"> 只看反覆考過的</label><label>說明種類 <select id="f-kind"><option value="">全部</option><option value="law">法規原文</option><option value="ours">我們寫的（含看不出）</option><option value="unknown">看不出</option></select></label><label><input type="checkbox" id="f-unsure"> 只看沒把握的</label>
+<label><input type="checkbox" id="f-point"> 只看反覆考過的</label><label>說明種類 <select id="f-kind"><option value="">全部</option><option value="law">法規原文</option><option value="ours">我們寫的（未查證，含看不出原因）</option><option value="unknown">看不出原因</option></select></label><label><input type="checkbox" id="f-unsure"> 只看沒把握的</label>
 <button type="button" id="open-all">全部展開</button><button type="button" id="close-all">全部收起</button><span class="muted" id="cnt"></span></div>
 <h2>信用卡（{n} 題）</h2>
 {''.join(cards)}

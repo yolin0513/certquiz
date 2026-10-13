@@ -628,19 +628,19 @@ function examLawCard(qs, answers, sum) {
 // ---------------------------------------------------------------- 教材（2026-10-13；資料與本機 HTML 同一份：data/local/教材/textbook.json）
 // 解答說明照使用者選的「乙」：指得出外部依據（法規條文）才寫；指不出來的留白，並寫出留白的原因。題目文字用匯入的題目。
 // 兩種說明一眼分得出來、而且不只靠顏色（2026-10-13 使用者定案乙＋丙）：
-//   乙＝左邊實線＋縮排的條文引文，固定開頭「法規原文（有依據）」；丙＝整塊點線框，每段都以「我們寫的，未經查證：」開頭，捲到一半也知道在讀哪一種。
+//   乙＝左邊實線＋縮排的條文引文，固定開頭「法規原文」；丙＝整塊點線框，每段都以「我們寫的（未查證）：」或「看不出原因：」開頭。
+//   2026-10-13 使用者看過：看不出三種樣式的差別，但每段前面的中文標示有用——區分靠文字標示，樣式只是輔助。
 function tbExplain(x) {
   if (x.ours) {
     return h('div', { class: `tb-ours${x.ours.unknown ? ' unknown' : ''}` },
-      h('p', {}, h('b', { text: '我們寫的，未經查證：' }), x.ours.unknown ? h('b', { text: '這題我們也看不出為什麼。' }) : null, x.ours.text));
+      h('p', {}, h('b', { text: x.ours.unknown ? '看不出原因：' : '我們寫的（未查證）：' }), x.ours.text));
   }
   if (x.explain) {
     const e = x.explain, v = e.version || '';
-    return h('div', { class: 'tb-exp' }, h('p', { class: 'ok', text: '法規原文（有依據）' }),
-      h('p', {}, e.link, h('span', { class: 'muted', text: '（這一句是我們寫的，把條文接到答案）' })),
-      h('p', { class: 'muted', text: `依據：「${e.law}」${e.article}，這題考試當時的版本（${v.slice(0, 4)}-${v.slice(4, 6)}-${v.slice(6)}）。原文：` }),
+    return h('div', { class: 'tb-exp' }, h('p', {}, h('b', { text: '法規原文：' }), `「${e.law}」${e.article}（考試當時 ${v.slice(0, 4)}-${v.slice(4, 6)}-${v.slice(6)} 版）`),
       h('blockquote', { class: 'tb-quote', text: e.text }),
-      h('p', { class: 'src', text: `原文來源：全國法規資料庫該版全文（2026-10-08 抓取），快照 ${e.snapshot}` }));
+      h('p', {}, h('b', { text: '我們寫的（未查證）：' }), e.link),
+      h('p', { class: 'src', text: `來源：全國法規資料庫（2026-10-08 抓取），快照 ${e.snapshot}` }));
   }
   return h('div', { class: 'tb-blank' }, h('p', { text: '說明：留白' }), h('p', { class: 'muted', text: `原因：${x.blank}。只有指得出外部依據（法規條文）時才寫說明。` }));
 }
@@ -675,12 +675,13 @@ async function textbookView(gen, q, cert, questions, tb, home, tabs, lawSum) {
   render(gen, h('a', { class: 'back', href: `#/study?cert=${cert.id}&view=textbook`, text: '← 回教材目錄' }), tabs,
     h('section', { class: 'card', id: 'tb-head' }, h('h2', { text: `${c.name}（${c.count} 題）` }), draft,
       h('ul', { class: 'tb-stats' },
-        h('li', {}, h('b', { text: `法規原文（有依據）${ne} 題` })),
-        h('li', {}, h('b', { text: `我們寫的，未經查證 ${no} 題` }), `，其中「這題我們也看不出為什麼」${nu} 題`)),
+        h('li', {}, h('b', { text: `法規原文 ${ne} 題` })),
+        h('li', {}, h('b', { text: `我們寫的（未查證）${no - nu} 題` })),
+        h('li', {}, h('b', { text: `看不出原因 ${nu} 題` }))),
       // 寬度用 el.style 設：網站的 CSP 不准 style 屬性（style-src 'self'），用屬性寫會被擋
       (bar => { bar.children[0].style.width = `${(ne / c.count * 100).toFixed(1)}%`; bar.children[1].style.width = `${((no - nu) / c.count * 100).toFixed(1)}%`; bar.children[2].style.width = `${(nu / c.count * 100).toFixed(1)}%`; return bar; })(
         h('div', { class: 'tb-bar', role: 'img', 'aria-label': `法規原文 ${ne} 題、我們寫的 ${no - nu} 題、看不出 ${nu} 題` }, h('span', { class: 'e' }), h('span', { class: 'o' }), h('span', { class: 'b' }))),
-      h('p', { class: 'muted', text: '實心＝法規原文；點點＝我們寫的；斜線＝我們也看不出為什麼。「看不出」的題數是這份教材的誠實指標：我們不為了填滿而硬寫。' })),
+      h('p', { class: 'muted', text: '每段說明前面都寫明是哪一種。「看不出原因」我們照實寫，不為了填滿而硬寫。' })),
     c.items.map(it => h('section', { class: 'card tb-item' },
       it.point ? h('p', { class: 'tb-badge', text: `反覆考過：${it.point.times} 期都考過（${it.point.kind === 'list' ? '同一份清單' : '同一條規定'}）` }) : null,
       tbQuestion(it, byId, lawSum),
