@@ -3,7 +3,8 @@
 """
 教材草稿 HTML（電腦上看；使用者 2026-10-13：HTML 與 App 都要做，題目與說明同一份來源）
 -------------------------------------------------------------------------------
-  python -u scripts/textbook_html.py   讀 data/local/教材/textbook.json（唯一來源）＋本機匯入包的題目文字 → data/local/教材/教材草稿.html
+  python -u scripts/textbook_html.py          讀 data/local/教材/textbook.json（唯一來源）＋本機匯入包的題目文字 → data/local/教材/教材草稿.html
+  python -u scripts/textbook_html.py ethics   職業道德：textbook-ethics.json → 職業道德教材草稿.html（只有兩層：我們寫的／沒有說明）
 
 設計要求（Dispatch 2026-10-13）：互動失效時內容仍要讀得完整——答案、說明、留白說明都「預設展開、程式執行時才收合」，
 不是「點了才產生」。控制項（搜尋、篩選、讀過／沒把握）預設隱藏，程式執行時才顯示；沒有程式時頁首說明為什麼看不到按鈕。
@@ -26,13 +27,19 @@ import ethics_stats as E  # noqa: E402
 ROOT = Path(__file__).resolve().parent.parent
 L = ROOT / "data" / "local"
 D = L / "教材"
-OUT = D / "教材草稿.html"
+CERT = (sys.argv[1:] or ["bic"])[0]
+CFG = {"bic": {"tb": "textbook.json", "pack": "bic-匯入包.json", "out": "教材草稿.html", "title": "內控教材草稿", "name": "內控"},
+       "ethics": {"tb": "textbook-ethics.json", "pack": "ethics-匯入包.json", "out": "職業道德教材草稿.html", "title": "職業道德教材草稿", "name": "職業道德"}}[CERT]
+OUT = D / CFG["out"]
 esc = html.escape
+# 職業道德只有兩層（docs/M 第十一節）：章首與頁首都要先解釋為什麼沒有「法規重點」
+NOLAW = "這一科沒有「法規重點」：職業道德的題目只有 3.4% 點名法規，而且多半是原則題，指不出可以對照的條文。所以每題只有兩種結果——「我們寫的（未查證）」或「沒有說明」。這不是少做了一層，是這一科沒有那一層可做。"
 
 
 def main():
-    tb = json.loads((D / "textbook.json").read_text(encoding="utf-8"))
-    pack = json.loads((L / "import" / "bic-匯入包.json").read_text(encoding="utf-8"))
+    tb = json.loads((D / CFG["tb"]).read_text(encoding="utf-8"))
+    pack = json.loads((L / "import" / CFG["pack"]).read_text(encoding="utf-8"))
+    two = CERT == "ethics"
     Q = {q["id"]: q for q in pack["questions"]}
     # 金融常識「題庫互證」的上限（乙的覆蓋率，草稿要寫）
     ethics = E.load116()
@@ -96,9 +103,10 @@ def main():
                      f'<div class="marks js-only" hidden><button type="button" data-m="read">讀過</button><button type="button" data-m="unsure">沒把握</button></div></section>')
       n, ne, no, np_ = ch["count"], ch["explained"], ch.get("ours", 0), ch.get("plain", 0)
       # 每一章的章首都有那一句（Dispatch：沒有說明和沒做過，畫面上長得一樣）
+      counts = (f'<p><b>我們寫的（未查證）{no} 題</b>・<b>沒有說明 {np_} 題</b></p><p class="nolaw-note">{NOLAW}</p>' if two
+                else f'<p><b>法規重點 {ne} 題</b>・<b>我們寫的（未查證）{no} 題</b>・<b>沒有說明 {np_} 題</b></p>')
       sections.append(f'<section class="card chap-head" id="ch-{esc(ch["id"])}"><h2>{esc(ch["name"])}（{n} 題）</h2>'
-                      f'<p><b>法規重點 {ne} 題</b>・<b>我們寫的（未查證）{no} 題</b>・<b>沒有說明 {np_} 題</b></p>'
-                      f'<p class="plain-note"><b>{PLAIN}</b></p></section>' + "".join(cards))
+                      f'{counts}<p class="plain-note"><b>{PLAIN}</b></p></section>' + "".join(cards))
       for k, v in (("n", n), ("ne", ne), ("no", no), ("np", np_), ("cards", len(cards))):
           tot[k] += v
     n, ne, no, np_ = tot["n"], tot["ne"], tot["no"], tot["np"]
@@ -161,14 +169,15 @@ label{font-size:.92rem}input,select{color:var(--fg);accent-color:var(--pri)}sele
 """
     pct = lambda a, b: f"{a / b:.0%}" if b else "—"
     page = f"""<!doctype html><html lang="zh-Hant"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<meta name="robots" content="noindex"><title>內控教材草稿</title><style>{css}</style></head><body><main>
+<meta name="robots" content="noindex"><title>{CFG["title"]}</title><style>{css}</style></head><body><main>
 <h1>教材草稿（請你確認再開工）</h1>
 <p class="muted">照你的選擇做：解答說明「乙＋丙」——指得出法規條文的放條文原文，其餘寫我們的理解並標「未經查證」；HTML（電腦上看）與 App（手機上看）都做，兩邊用同一份資料產生。產生時間 {esc(datetime.now().strftime("%Y-%m-%d %H:%M"))}。題目原文只放在你自己的裝置，不要轉貼。</p>
 <section class="card nojs" id="nojs"><p><b>如果你看不到搜尋框和按鈕</b>：表示這個瀏覽器沒有執行網頁程式（例如 iPhone 的「檔案」App 預覽）。內容仍然全部列出——答案和說明都已經展開，可以直接往下讀。手機上要互動，請用 App 裡的「讀書 → 教材」。</p></section>
 
-<section class="card"><h2>說明的三種情形（已做的 {len(filled)} 章合計 {n} 題）</h2>
+<section class="card"><h2>{"說明的兩種情形" if two else "說明的三種情形"}（{CFG["name"]}：已做的 {len(filled)} 章合計 {n} 題）</h2>
+{f'<p id="nolaw-note"><b>{NOLAW}</b>（每一章的章首也都寫著這一句。內控那一科有三層，這一科只有兩層。）</p>' if two else ""}
 <ul>
-<li><b>法規重點 {ne} 題</b>：從考試當時那一版的條文濃縮成一句、標了條號（兩個判斷者都判條文寫出了正解，摘要另由一個獨立代理對照全文核對過）；完整條文可以展開看。</li>
+{"" if two else f'<li><b>法規重點 {ne} 題</b>：從考試當時那一版的條文濃縮成一句、標了條號（兩個判斷者都判條文寫出了正解，摘要另由一個獨立代理對照全文核對過）；完整條文可以展開看。</li>'}
 <li><b>我們寫的（未查證）{no} 題</b>：我們的理解，沒有外部依據，可能是錯的。</li>
 <li><b>沒有說明 {np_} 題</b>。</li>
 </ul>
@@ -176,21 +185,21 @@ label{font-size:.92rem}input,select{color:var(--fg);accent-color:var(--pri)}sele
 <p><b>「我們寫的」怎麼寫</b>（每一題都照這三條）：只解釋為什麼官方正解是對的，不延伸補充；不寫法規名稱（那會讓它看起來像有依據）；拿不準就寫拿不準。<b>這一層可能是錯的</b>——它是我們的理解，沒有外部依據；跟你自己的理解或課本衝突時，以官方答案與法規為準。</p></section>
 
 <section class="card"><h2>分章方案</h2>
-<p><b>分章是為了好讀、好找，不是驗證過的學習單位</b>（量過：同一組讀懂一題對答對另一題有幫助的只有 11%）。章名來自官方簡章的命題範圍、依題庫實際內容拆細；題數是逐題歸章（8 個代理各歸一批）的結果。</p>
+<p><b>分章是為了好讀、好找，不是驗證過的學習單位</b>（量過：同一組讀懂一題對答對另一題有幫助的只有 11%）。{"章名是證基會公告的職業道德 7 項範圍；題數是逐題歸章（7 個代理各歸一批）的結果。範圍是 116 年版考試範圍的職業道德 616 題；金融市場常識不做（docs/M 第十二節）。" if two else "章名來自官方簡章的命題範圍、依題庫實際內容拆細；題數是逐題歸章（8 個代理各歸一批）的結果。"}</p>
 <div class="tw"><table><thead><tr><th>章</th><th>題數</th><th></th></tr></thead><tbody>{chap_rows}</tbody></table></div>
-<p class="muted">金融市場常識與職業道德：章名用證基會公告的範圍（常識 6 章、道德 7 章）；題庫 PDF 沒有標章節，每章題數要等正式版逐題歸章。那一科公開的是整份題庫、不是歷屆考卷，所以沒有「最常出現」可以數，會改成把同一概念的題排在一起。</p></section>
+<p class="muted" {"hidden" if two else ""}>金融市場常識與職業道德：章名用證基會公告的範圍（常識 6 章、道德 7 章）；題庫 PDF 沒有標章節，每章題數要等正式版逐題歸章。那一科公開的是整份題庫、不是歷屆考卷，所以沒有「最常出現」可以數，會改成把同一概念的題排在一起。</p></section>
 
 <section class="card"><h2>互動設計</h2>
 <ul>
 <li><b>預設收合、點了展開</b>：答案與說明先收起來，先自己想。網頁程式不能執行時，全部改成展開（上面那段說明）。</li>
 <li><b>搜尋</b>、<b>只看反覆考過的</b>、<b>依說明種類篩選</b>（法規重點／我們寫的／沒有說明）、<b>只看沒把握的</b>。</li>
 <li><b>讀過／沒把握</b>：存在這台電腦的瀏覽器裡。手機上的 App 版則跟錯題、弱點複習、「答案有疑問」接在一起，也會跟著備份走。</li>
-<li><b>App 版樣本</b>：匯入新版的內控匯入包後，App 的「讀書」多一個「教材（草稿）」，內容與這一頁同一份資料。</li>
+<li><b>App 版</b>：匯入新版的{CFG["name"] if two else "內控"}匯入包後，App 的「讀書」多一個「教材（草稿）」，內容與這一頁同一份資料。</li>
 </ul>
 <p class="muted">不列年份：畫面上不寫哪一期；每題的出處（期別、題號、頁碼）我們內部仍保留在題號裡與對照檔，之後複查、處理你回報的「答案有疑問」時要用。</p></section>
 
 <div class="tools js-only" hidden><input type="search" id="q" placeholder="搜尋（例如：循環信用）" aria-label="搜尋">
-<label><input type="checkbox" id="f-point"> 只看反覆考過的</label><label>說明種類 <select id="f-kind"><option value="">全部</option><option value="law">法規重點</option><option value="ours">我們寫的（未查證）</option><option value="plain">沒有說明</option></select></label><label><input type="checkbox" id="f-unsure"> 只看沒把握的</label>
+<label {"hidden" if two else ""}><input type="checkbox" id="f-point"> 只看反覆考過的</label><label>說明種類 <select id="f-kind"><option value="">全部</option>{"" if two else '<option value="law">法規重點</option>'}<option value="ours">我們寫的（未查證）</option><option value="plain">沒有說明</option></select></label><label><input type="checkbox" id="f-unsure"> 只看沒把握的</label>
 <button type="button" id="open-all">全部展開</button><button type="button" id="close-all">全部收起</button><span class="muted" id="cnt"></span></div>
 {''.join(sections)}
 </main><script>{js}</script></body></html>"""

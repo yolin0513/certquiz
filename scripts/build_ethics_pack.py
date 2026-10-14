@@ -102,6 +102,16 @@ def main():
             "counts": {"total": len(qs), "inScope": len(in_scope), "outside": len(outside), "dup": sum(1 for q in qs if q.get("dupOf")),
                        "answerChanged": len(changed)},
             "questions": qs}
+    # 職業道德教材（docs/M 第十一節）：textbook-ethics.json 是唯一來源，跟著匯入包走（App「讀書 → 教材」）；題號對不到就擋，不放半套
+    tbf = I.ROOT / "data" / "local" / "教材" / "textbook-ethics.json"
+    if tbf.exists():
+        tb = json.loads(tbf.read_text(encoding="utf-8"))
+        ids = {q["id"] for q in qs}
+        missing = [x["id"] for c in tb["chapters"] for x in c.get("items", []) if x["id"] not in ids]
+        if missing:
+            print(f"BUILD-ETHICS ABORT：教材的題號對不到題目：{missing[:3]}（重新跑 scripts/textbook_build_ethics.py）")
+            return 1
+        pack["textbook"] = tb
     OUT.parent.mkdir(parents=True, exist_ok=True)
     OUT.write_text(json.dumps(pack, ensure_ascii=False, indent=1), encoding="utf-8")
     print(f"BUILD-ETHICS OK：{len(qs)} 題（考試範圍內 {len(in_scope)}、範圍外 {len(outside)}、去重 {pack['counts']['dup']}）→ {OUT}")

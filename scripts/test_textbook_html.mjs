@@ -22,8 +22,10 @@ process.stdout.write(`TEST-TEXTBOOK：完整輸出與結論都寫在 ${LOG}（�
 let fails = 0; const failed = [];
 const check = (d, ok, detail = '') => { out(`${ok ? '✓' : '✗'} ${d}${ok ? '' : '：' + detail}`); if (!ok) { fails++; failed.push(d); } };
 
-const FILE = join(ROOT, 'data', 'local', '教材', '教材草稿.html');
-const TB = JSON.parse(readFileSync(join(ROOT, 'data', 'local', '教材', 'textbook.json'), 'utf-8'));
+// 參數 ethics：測職業道德那一份（只有兩層，沒有法規重點；docs/M 第十一節）
+const CERT = process.argv.includes('ethics') ? 'ethics' : 'bic';
+const FILE = join(ROOT, 'data', 'local', '教材', CERT === 'ethics' ? '職業道德教材草稿.html' : '教材草稿.html');
+const TB = JSON.parse(readFileSync(join(ROOT, 'data', 'local', '教材', CERT === 'ethics' ? 'textbook-ethics.json' : 'textbook.json'), 'utf-8'));
 // 所有已做的章合在一起看（每一章的章首都要有「沒有說明＝純粹要背」那一句）
 const filledCh = TB.chapters.filter(c => c.items);
 const ch = { items: filledCh.flatMap(c => c.items) };
@@ -53,6 +55,7 @@ async function main() {
         fullHidden: qs.filter(q => q.querySelector('.exp')).every(q => q.querySelector('details.full') && !q.querySelector('details.full').open),
         // 條文全文原樣在不在：跟 textbook.json 逐題比對（不用長度門檻——信託業法第31條全文只有 18 字）
         fullText: Object.fromEntries(qs.filter(q => q.querySelector('.exp')).map(q => [q.getAttribute('data-qid'), (q.querySelector('details.full blockquote') || {}).textContent || ''])),
+        nolaw: vis(document.getElementById('nolaw-note')) && document.querySelectorAll('.chap-head .nolaw-note').length === document.querySelectorAll('.chap-head').length,
         plainNote: vis(document.getElementById('plain-note')) && document.querySelectorAll('.chap-head .plain-note').length === document.querySelectorAll('.chap-head').length && document.querySelectorAll('.chap-head').length > 0,
         kinds: Object.fromEntries(qs.map(q => [q.getAttribute('data-qid'), q.getAttribute('data-kind')])),
         oursStart: qs.filter(q => q.querySelector('.ours')).every(q => q.querySelector('.ours').textContent.startsWith('我們寫的（未查證）：')),
@@ -62,12 +65,14 @@ async function main() {
     });
     check(`關掉 JavaScript：${r0.n} 題每一題的官方正解都看得到（${r0.ans}）；有說明的題說明看得到、純背的題不出現說明（${r0.expOrBlank}）；章首寫明「沒有說明的題＝純粹要背」`, r0.n === want.length && r0.ans === r0.n && r0.expOrBlank === r0.n && r0.plainNote);
     const wantFull = Object.fromEntries(ch.items.flatMap(it => [it, ...(it.variants || []).filter(v => !v.dup)]).filter(q => q.explain).map(q => [q.id, q.explain.text]));
-    const fullOk = Object.keys(wantFull).length > 0 && Object.entries(wantFull).every(([id, t]) => (r0.fullText[id] || '').replace(/\s+/g, '') === t.replace(/\s+/g, ''));
+    const fullOk = CERT === 'ethics' ? Object.keys(wantFull).length === 0 && r0.exp.length === 0 : Object.keys(wantFull).length > 0 && Object.entries(wantFull).every(([id, t]) => (r0.fullText[id] || '').replace(/\s+/g, '') === t.replace(/\s+/g, ''));
     check('法規重點：完整條文收在展開裡、預設不展開、內容還在（不刪；跟原文逐題相同）', r0.fullHidden && fullOk);
     check('每一題的說明種類（法規原文／我們寫的／看不出）＝textbook.json；沒有留白', JSON.stringify(r0.kinds) === JSON.stringify(Object.fromEntries(Object.keys(r0.kinds).map(k => [k, wantKinds[k]]))) && !Object.values(r0.kinds).includes('blank'));
     check('中文標示：我們寫的每段以「我們寫的（未查證）：」開頭；法規重點以「法規重點：第…條」開頭、不標未查證', r0.oursStart && r0.lawStart);
     check(`關掉 JavaScript：法規原文的 ${r0.exp.length} 題＝textbook.json 裡有依據的 ${wantExp.size} 題`, JSON.stringify(r0.exp) === JSON.stringify([...wantExp].sort()));
     check('關掉 JavaScript：搜尋與按鈕不出現；頁首寫明為什麼看不到按鈕', !r0.tools && r0.nojs);
+    // 兩層的那一科：頁首與每一章章首都要寫明「這一科沒有法規重點」；三層的那一科不能出現這句
+    check(CERT === 'ethics' ? '職業道德：頁首與每一章章首都寫明「這一科沒有法規重點」及原因' : '內控：不出現「這一科沒有法規重點」', CERT === 'ethics' ? r0.nolaw : !r0.nolaw);
     check(`同一份來源：頁面上的題號＝textbook.json 那一章的 ${want.length} 題（不多不少）`, JSON.stringify(r0.ids) === JSON.stringify(want));
 
     // 二、打開 JavaScript

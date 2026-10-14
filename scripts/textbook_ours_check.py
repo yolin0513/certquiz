@@ -29,6 +29,7 @@ ROOT = Path(__file__).resolve().parent.parent
 D = ROOT / "data" / "local" / "教材"
 LOG = D / "log.tsv"
 SEED = 20261014
+SKIP = set()   # sample 這一輪要跳過的批次（由同一輪的加抽處理）
 RND = 1   # 第幾輪（整批退回重寫後是第 2 輪起；檔名加 -r2…，種子也加輪次，抽到的不會跟上一輪一樣）
 
 
@@ -66,11 +67,12 @@ def ours(topic):
 
 
 def qmap():
-    return {q["id"]: q for q in json.loads((ROOT / "data" / "local" / "import" / "bic-匯入包.json").read_text(encoding="utf-8"))["questions"]}
+    # 內控與職業道德（docs/M 第十一節）兩份匯入包；題號前綴不同，不會撞
+    return {q["id"]: q for f in ("bic-匯入包.json", "ethics-匯入包.json") for q in json.loads((ROOT / "data" / "local" / "import" / f).read_text(encoding="utf-8"))["questions"]}
 
 
 def block(q, text):
-    return [q["stem"]] + [f"- ({k}) {o}{'　**（官方正解）**' if k == q['answer'] else ''}" for k, o in enumerate(q["options"], 1)] + ["", f"**說明**：{text}", ""]
+    return [q["stem"]] + [f"- ({k}) {o}{'　**（官方正解）**' if str(k) == str(q['answer']) else ''}" for k, o in enumerate(q["options"], 1)] + ["", f"**說明**：{text}", ""]
 
 
 def c1(topic):
@@ -106,16 +108,23 @@ def passed_batches(topic, O):
                 continue
             then, cur = {}, None
             for l in mp.read_text(encoding="utf-8").splitlines():
-                if l.startswith("## bic-"):
+                if l.startswith(("## bic-", "## ethics-")):
                     cur = l[3:].strip()
                 elif cur and l.startswith("**說明**："):
                     then[cur] = l[len("**說明**："):].strip()
                     cur = None
             R = rows(tp, 6)
+            # 用「抽樣當時」的批次對照（sample-key／extra-key），不用現在的批次欄：修過的那段會換批次代號，原批次看起來就像全部合格
+            kf = D / f"ours-{topic}-{kind}-key{sx}.json"
+            if kf.exists():
+                then_batch = json.loads(kf.read_text(encoding="utf-8"))
+            else:   # 舊的加抽單沒有存批次：整份加抽只屬於一批，取多數（修過的那一段換了批次代號，是少數）
+                bs = [O[i][2] for i in R if i in O]
+                maj = max(set(bs), key=bs.count) if bs else ""
+                then_batch = {i: maj for i in R}
             by = {}
             for i, c in R.items():
-                if i in O:
-                    by.setdefault(O[i][2], []).append(c)
+                by.setdefault(then_batch.get(i, ""), []).append(c)
             for w, cs in by.items():
                 if any("不合格" in c[1:5] for c in cs):
                     continue
@@ -136,7 +145,9 @@ def sample(topic):
         if v[0] == "說明":
             by.setdefault(v[2], []).append(i)
     done = passed_batches(topic, O)
-    by = {w: ids for w, ids in by.items() if w not in done}
+    by = {w: ids for w, ids in by.items() if w not in done and w not in SKIP}
+    if SKIP:
+        done = done | {f"{w}（這一輪由加抽處理）" for w in SKIP}
     pick = []
     for n, (w, ids) in enumerate(sorted(by.items()), 1):
         k = min(len(ids), max(8, -(-len(ids) * 15 // 100)))
@@ -180,7 +191,7 @@ def lock(topic, what):
         return 2
     # 判斷檔的題號要跟單子完全一致（代理漏判、多判都擋；2026-10-14 寫手漏填過一題）
     want = [l[3:].strip() for l in p.with_suffix(".md").read_text(encoding="utf-8").splitlines() if l.startswith("## ")]
-    want = [w for w in want if w.startswith("bic-")]
+    want = [w for w in want if w.startswith(("bic-", "ethics-"))]
     if sorted(want) != sorted(R):
         print(f"LOCK ABORT：{p.name} 題號跟單子不一致：少 {sorted(set(want) - set(R))[:5]} 多 {sorted(set(R) - set(want))[:5]}")
         return 2
@@ -221,6 +232,15 @@ def result(topic):
     print(f"C1 全量：{len(C)} 段，矛盾 {len(c1bad)}" + "".join(f"\n  矛盾 {k}：{C[k][2]}" for k in c1bad))
     for w, (v, why) in verdict.items():
         print(f"批次 {w}：{v}{'｜' + why if why else ''}")
+    # 同一輪如果也有加抽（修一段＋加抽的批次），加抽也要鎖定而且全部合格才算通過
+    xp = D / f"ours-{topic}-extra{sfx()}.tsv"
+    if xp.exists():
+        lkx = logged("ours-extra-lock", xp.name)
+        if not lkx or sha(xp) != lkx[-1]:
+            print(f"RESULT ABORT：{xp.name} 還沒鎖定或被改過")
+            return 2
+        xbad = [k for k, c in rows(xp, 6).items() if "不合格" in c[1:5]]
+        verdict["加抽"] = ("整批退回", f"加抽不合格 {xbad}") if xbad else ("通過", "")
     if not c1bad and all(v == "通過" for v, _ in verdict.values()):
         log("ours-pass", of)
         print(f"RESULT PASS：{of.name} 鎖定（之後改過，建置會擋）")
@@ -245,7 +265,10 @@ def extra(topic, batch):
     pick = random.Random(SEED + 7000 + RND).sample(pool, min(8, len(pool)))
     # 上一輪抽樣不合格、這一輪修過的那一段也要再判一次（不算在加抽的 8 段裡）
     pf = D / f"ours-{topic}-sample{'' if RND - 1 <= 1 else f'-r{RND - 1}'}.tsv"
-    fixed = [k for k, c in rows(pf, 6).items() if "不合格" in c[1:5] and O.get(k, [""])[0] == "說明"] if pf.exists() else []
+    # 只收「上一輪抽樣時屬於這一批」的修正段；別批（例如整批退回重寫的）由抽樣處理
+    pk = D / f"ours-{topic}-sample-key{'' if RND - 1 <= 1 else f'-r{RND - 1}'}.json"
+    pkey = json.loads(pk.read_text(encoding="utf-8")) if pk.exists() else {}
+    fixed = [k for k, c in rows(pf, 6).items() if "不合格" in c[1:5] and O.get(k, [""])[0] == "說明" and pkey.get(k, batch) == batch] if pf.exists() else []
     pick = fixed + pick
     md = ["# 「我們寫的」加抽複核", "", "每一段判四項（不要判「寫得對不對」——那沒有真值）：", CRIT, "",
           "每項填「合格」或「不合格」；有不合格要寫一句理由。只看這份單子。", ""]
@@ -255,6 +278,7 @@ def extra(topic, batch):
         lines.append(f"{i}\t\t\t\t\t")
     md_p.write_text("\n".join(md), encoding="utf-8")
     tsv_p.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    (D / f"ours-{topic}-extra-key{sfx()}.json").write_text(json.dumps({i: batch for i in pick}, ensure_ascii=False), encoding="utf-8")
     log(f"ours-extra-sheet{sfx()}", D / f"ours-{topic}.tsv")
     print(f"EXTRA OK：批次 {batch} 還沒抽過的 {len(pool)} 段裡加抽 {len(pick)} 段 → {md_p}")
     return 0
@@ -297,6 +321,10 @@ if __name__ == "__main__":
     a = sys.argv[1:] + ["", "", "", ""]
     # 最後一個參數可以是 r2、r3…（第幾輪）
     for x in list(a):
+        if x.startswith("skip="):   # sample：這一輪由加抽處理的批次（修一段＋加抽），不在抽樣裡重抽
+            SKIP = set(x[5:].split(","))
+            a.remove(x)
+            a.append("")
         if x[:1] == "r" and x[1:].isdigit():
             RND = int(x[1:])
             a.remove(x)

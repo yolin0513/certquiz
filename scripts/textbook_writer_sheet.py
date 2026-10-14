@@ -53,11 +53,11 @@ def main(argv):
         print(__doc__)
         return 2
     name, batch, ids = argv[0], argv[1], argv[2:]
-    Q = {q["id"]: q for q in json.loads((ROOT / "data" / "local" / "import" / "bic-匯入包.json").read_text(encoding="utf-8"))["questions"]}
+    Q = {q["id"]: q for f in ("bic-匯入包.json", "ethics-匯入包.json") for q in json.loads((ROOT / "data" / "local" / "import" / f).read_text(encoding="utf-8"))["questions"]}
     md, rows = [SPEC, "## 題目", ""], ["題號\t類別（說明／看不出）\t內容\t批次"]
     for i in ids:
         q = Q[i]
-        md += [f"### {i}", q["stem"]] + [f"- ({k}) {o}{'　**（官方正解）**' if k == q['answer'] else ''}" for k, o in enumerate(q["options"], 1)] + [""]
+        md += [f"### {i}", q["stem"]] + [f"- ({k}) {o}{'　**（官方正解）**' if str(k) == str(q['answer']) else ''}" for k, o in enumerate(q["options"], 1)] + [""]
         rows.append(f"{i}\t\t\t{batch}")
     (D / f"{name}.md").write_text("\n".join(md), encoding="utf-8")
     (D / f"{name}.tsv").write_text("\n".join(rows) + "\n", encoding="utf-8")

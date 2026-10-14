@@ -41,7 +41,7 @@ def locked_at():
 def texts(md):
     out, cur = {}, None
     for l in md.read_text(encoding="utf-8").splitlines():
-        if l.startswith("## bic-"):
+        if l.startswith(("## bic-", "## ethics-")):
             cur = l[3:].strip()
         elif cur and l.startswith("**說明**："):
             out[cur] = l[len("**說明**："):].strip()
@@ -54,8 +54,8 @@ def main(argv):
     when = locked_at()
     judg = defaultdict(lambda: defaultdict(list))   # (題號, 文字) → 項目 → [判定]
     files = 0
-    for md in sorted(D.glob("ours-T*-*.md")):
-        m = re.fullmatch(r"ours-(T\d+)-(c1|sample|extra)(-r\d+)?\.md", md.name)
+    for md in sorted(D.glob("ours-*-*.md")):
+        m = re.fullmatch(r"ours-([TE]\d+)-(c1|sample|extra)(-r\d+)?\.md", md.name)
         tsv = md.with_suffix(".tsv")
         if not m or not tsv.exists() or tsv.name not in when or when[tsv.name] < since:
             continue

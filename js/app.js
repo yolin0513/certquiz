@@ -665,7 +665,7 @@ async function textbookView(gen, q, cert, questions, tb, home, tabs, lawSum) {
   if (!cid) {
     render(gen, home, tabs, h('section', { class: 'card', id: 'tb-index' }, h('h2', { text: `${cert.short}：教材` }), draft,
       h('div', { class: 'study-skills' }, tb.chapters.map(c => c.items
-        ? h('a', { class: 'item', href: `#/study?cert=${cert.id}&view=textbook&chapter=${c.id}` }, h('span', { class: 'name', text: c.name }), h('span', { class: 'meta', text: `${c.count} 題・有說明 ${c.explained}` }))
+        ? h('a', { class: 'item', href: `#/study?cert=${cert.id}&view=textbook&chapter=${c.id}` }, h('span', { class: 'name', text: c.name }), h('span', { class: 'meta', text: tb.layers === 2 ? `${c.count} 題・我們寫的 ${c.ours || 0}` : `${c.count} 題・有說明 ${c.explained}` }))
         : h('div', { class: 'item none' }, h('span', { class: 'name', text: c.name }), h('span', { class: 'meta', text: `${c.count} 題・正式版才做` }))))));
     return;
   }
@@ -677,8 +677,10 @@ async function textbookView(gen, q, cert, questions, tb, home, tabs, lawSum) {
   const np = all.filter(x => x.plain).length;
   render(gen, h('a', { class: 'back', href: `#/study?cert=${cert.id}&view=textbook`, text: '← 回教材目錄' }), tabs,
     h('section', { class: 'card', id: 'tb-head' }, h('h2', { text: `${c.name}（${c.count} 題）` }), draft,
+      // 職業道德只有兩層（docs/M 第十一節）：沒有「法規重點」，先說清楚為什麼，免得看起來像少做了一層
+      tb.layers === 2 ? h('p', { id: 'tb-nolaw-note', text: tb.noLaw || '這一科沒有「法規重點」。' }) : null,
       h('ul', { class: 'tb-stats' },
-        h('li', {}, h('b', { text: `法規重點 ${ne} 題` }), '（從條文濃縮，標了條號，可以展開看全文）'),
+        tb.layers === 2 ? null : h('li', {}, h('b', { text: `法規重點 ${ne} 題` }), '（從條文濃縮，標了條號，可以展開看全文）'),
         h('li', {}, h('b', { text: `我們寫的（未查證）${no} 題` }), '（我們的理解，沒有外部依據）'),
         h('li', {}, h('b', { text: `沒有說明 ${np} 題` }))),
       h('p', { id: 'tb-plain-note', text: '沒有說明的題＝純粹要背的數字或規定，我們說不出比「規定就是這樣」更多的理由——不是漏做。' })),
@@ -705,8 +707,10 @@ function answerChangeNote(item, questions) {
 // 只列題目與官方正解，不寫自己的解析（docs/L）。
 async function versionedStudyView(gen, q, cert, questions) {
   const PAGE = 50;
-  const view = ['outside', ...cert.subjects.map(s => s.id)].includes(q.get('view')) ? q.get('view') : cert.subjects[0].id;
+  const view = ['outside', 'textbook', ...cert.subjects.map(s => s.id)].includes(q.get('view')) ? q.get('view') : cert.subjects[0].id;
   const page = Math.max(1, Number(q.get('page')) || 1);
+  // 職業道德教材（docs/M 第十一節）：跟著匯入包走，跟內控用同一個教材畫面
+  const textbook = await DB.getMeta(`textbook:${cert.id}`, null);
   const active = questions.filter(L.isActive);
   const byId = new Map(questions.map(x => [x.id, x]));
   const inScope = id => active.filter(x => L.inScope(x) && x.subject === id);
@@ -738,8 +742,11 @@ async function versionedStudyView(gen, q, cert, questions) {
     : h('section', { class: 'card', id: 'scope-note' }, h('h2', { text: `116 年版・${subjName.get(view)}（${list.length} 題）` }),
       h('p', { class: 'muted', text: '116 年版是考試範圍（2027 年 1 月 1 日起適用）。題目與正解照證基會公告題庫，這裡不寫解析。' }),
       h('div', { class: 'row' }, h('a', { class: 'btn primary', href: `#/practice?cert=${cert.id}&mode=practice&subject=${view}&count=50&order=unseen`, text: '練這一科（50 題）' })));
+  const tabs = h('div', { class: 'row' }, textbook ? tab('textbook', `教材${textbook.status === 'draft' ? '（草稿）' : ''}`) : null,
+    cert.subjects.map(s => tab(s.id, `116 年版・${s.name}（${inScope(s.id).length}）`)), tab('outside', `不在考試範圍（${outside.length}）`));
+  if (view === 'textbook' && textbook) { await textbookView(gen, q, cert, questions, textbook, h('a', { class: 'back', href: '#/', text: '← 回首頁' }), tabs, L.lawSummary(questions)); return; }
   render(gen, h('a', { class: 'back', href: '#/', text: '← 回首頁' }),
-    h('div', { class: 'row' }, cert.subjects.map(s => tab(s.id, `116 年版・${s.name}（${inScope(s.id).length}）`)), tab('outside', `不在考試範圍（${outside.length}）`)),
+    tabs,
     changedCard, head, pager,
     shown.map(x => {
       const nw = x.newId ? byId.get(x.newId) : null;
