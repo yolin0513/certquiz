@@ -92,6 +92,39 @@ def c1(topic):
     return 0
 
 
+def passed_batches(topic, O):
+    """先前輪次已經通過的批次（Dispatch 2026-10-14：已通過的批次不再重抽——同一段沒改過的文字多看一次，就多一次抽中核對雜訊的機會）。
+    通過＝某一輪鎖定過的抽樣裡，這一批抽到的段全部四項合格；或某一輪的加抽全部合格（加抽的那一批）。
+    而且那一批現在每一段的文字都跟當時單子上的一樣（有一段改過就不算）。"""
+    out = set()
+    for r in range(1, RND):
+        sx = "" if r == 1 else f"-r{r}"
+        for kind in ("sample", "extra"):
+            tp, mp = D / f"ours-{topic}-{kind}{sx}.tsv", D / f"ours-{topic}-{kind}{sx}.md"
+            lk = logged(f"ours-{kind}-lock", tp.name)
+            if not (tp.exists() and mp.exists() and lk and sha(tp) == lk[-1]):
+                continue
+            then, cur = {}, None
+            for l in mp.read_text(encoding="utf-8").splitlines():
+                if l.startswith("## bic-"):
+                    cur = l[3:].strip()
+                elif cur and l.startswith("**說明**："):
+                    then[cur] = l[len("**說明**："):].strip()
+                    cur = None
+            R = rows(tp, 6)
+            by = {}
+            for i, c in R.items():
+                if i in O:
+                    by.setdefault(O[i][2], []).append(c)
+            for w, cs in by.items():
+                if any("不合格" in c[1:5] for c in cs):
+                    continue
+                ids = [i for i, v in O.items() if v[0] == "說明" and v[2] == w]
+                if all(i not in then or then[i] == O[i][1] for i in ids) and any(i in then for i in ids):
+                    out.add(w)
+    return out
+
+
 def sample(topic):
     md_p, tsv_p = D / f"ours-{topic}-sample{sfx()}.md", D / f"ours-{topic}-sample{sfx()}.tsv"
     if md_p.exists():
@@ -102,6 +135,8 @@ def sample(topic):
     for i, v in sorted(O.items()):
         if v[0] == "說明":
             by.setdefault(v[2], []).append(i)
+    done = passed_batches(topic, O)
+    by = {w: ids for w, ids in by.items() if w not in done}
     pick = []
     for n, (w, ids) in enumerate(sorted(by.items()), 1):
         k = min(len(ids), max(8, -(-len(ids) * 15 // 100)))
@@ -117,7 +152,7 @@ def sample(topic):
     tsv_p.write_text("\n".join(rows) + "\n", encoding="utf-8")
     (D / f"ours-{topic}-sample-key{sfx()}.json").write_text(json.dumps({i: w for w, i in pick}, ensure_ascii=False), encoding="utf-8")
     log(f"ours-sample-sheet{sfx()}", D / f"ours-{topic}.tsv")
-    print(f"SAMPLE OK：{len(pick)} 段（批次 {', '.join(f'{w}:{len(v)}' for w, v in sorted(by.items()))}）→ {md_p}")
+    print(f"SAMPLE OK：{len(pick)} 段（批次 {', '.join(f'{w}:{len(v)}' for w, v in sorted(by.items()))}；先前已通過、不再重抽：{', '.join(sorted(done)) or '無'}）→ {md_p}")
     return 0
 
 
