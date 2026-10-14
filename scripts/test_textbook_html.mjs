@@ -50,7 +50,9 @@ async function main() {
       return { n: qs.length, ids: qs.map(q => q.getAttribute('data-qid')).sort(),
         ans: qs.filter(q => vis(q.querySelector('.right-ans'))).length,
         expOrBlank: qs.filter(q => q.getAttribute('data-kind') === 'plain' ? !q.querySelector('.exp, .ours, .blank') : (vis(q.querySelector('.exp')) || vis(q.querySelector('.ours')))).length,
-        fullHidden: qs.filter(q => q.querySelector('.exp')).every(q => q.querySelector('details.full') && !q.querySelector('details.full').open && q.querySelector('details.full blockquote').textContent.length > 20),
+        fullHidden: qs.filter(q => q.querySelector('.exp')).every(q => q.querySelector('details.full') && !q.querySelector('details.full').open),
+        // 條文全文原樣在不在：跟 textbook.json 逐題比對（不用長度門檻——信託業法第31條全文只有 18 字）
+        fullText: Object.fromEntries(qs.filter(q => q.querySelector('.exp')).map(q => [q.getAttribute('data-qid'), (q.querySelector('details.full blockquote') || {}).textContent || ''])),
         plainNote: vis(document.getElementById('plain-note')) && document.querySelectorAll('.chap-head .plain-note').length === document.querySelectorAll('.chap-head').length && document.querySelectorAll('.chap-head').length > 0,
         kinds: Object.fromEntries(qs.map(q => [q.getAttribute('data-qid'), q.getAttribute('data-kind')])),
         oursStart: qs.filter(q => q.querySelector('.ours')).every(q => q.querySelector('.ours').textContent.startsWith('我們寫的（未查證）：')),
@@ -59,7 +61,9 @@ async function main() {
         tools: vis(document.querySelector('.tools')), nojs: vis(document.getElementById('nojs')) };
     });
     check(`關掉 JavaScript：${r0.n} 題每一題的官方正解都看得到（${r0.ans}）；有說明的題說明看得到、純背的題不出現說明（${r0.expOrBlank}）；章首寫明「沒有說明的題＝純粹要背」`, r0.n === want.length && r0.ans === r0.n && r0.expOrBlank === r0.n && r0.plainNote);
-    check('法規重點：完整條文收在展開裡、預設不展開、內容還在（不刪）', r0.fullHidden);
+    const wantFull = Object.fromEntries(ch.items.flatMap(it => [it, ...(it.variants || []).filter(v => !v.dup)]).filter(q => q.explain).map(q => [q.id, q.explain.text]));
+    const fullOk = Object.keys(wantFull).length > 0 && Object.entries(wantFull).every(([id, t]) => (r0.fullText[id] || '').replace(/\s+/g, '') === t.replace(/\s+/g, ''));
+    check('法規重點：完整條文收在展開裡、預設不展開、內容還在（不刪；跟原文逐題相同）', r0.fullHidden && fullOk);
     check('每一題的說明種類（法規原文／我們寫的／看不出）＝textbook.json；沒有留白', JSON.stringify(r0.kinds) === JSON.stringify(Object.fromEntries(Object.keys(r0.kinds).map(k => [k, wantKinds[k]]))) && !Object.values(r0.kinds).includes('blank'));
     check('中文標示：我們寫的每段以「我們寫的（未查證）：」開頭；法規重點以「法規重點：第…條」開頭、不標未查證', r0.oursStart && r0.lawStart);
     check(`關掉 JavaScript：法規原文的 ${r0.exp.length} 題＝textbook.json 裡有依據的 ${wantExp.size} 題`, JSON.stringify(r0.exp) === JSON.stringify([...wantExp].sort()));
