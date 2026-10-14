@@ -34,7 +34,7 @@ ROOT = Path(__file__).resolve().parent.parent
 L = ROOT / "data" / "local"
 D = L / "教材"
 OUT = D / "textbook.json"
-FILLED = ["T08", "T07", "T01", "T02", "T03", "T04"]   # 全量進行中（docs/M 第七節）：每通過一組就加進來
+FILLED = ["T08", "T07", "T01", "T02", "T03", "T04", "T05", "T06", "T09", "T10"]   # 全量進行中（docs/M 第七節）：每通過一組就加進來
 # C3（全量、機械）：「我們寫的」不得出現法規名稱、「依據」、「依…規定」、「主管機關規定」
 LAWNAME = re.compile(r"「[^」]*(辦法|準則|規則|要點|注意事項|公約|條例|法)」|依據|依[^，。；]{0,12}規定|主管機關規定")
 
@@ -75,6 +75,9 @@ def main():
             continue
         b = json.loads(bf.read_text(encoding="utf-8"))
         c = b["topic"]
+        disagree |= {d[1] for d in b["disagree"]}
+        if not b["basis"]:   # 這一章沒有任何題對得上依據：沒有摘要要核（例：T06 候選 0 題）
+            continue
         chk = SC.checked(c)
         if chk is None:
             print(f"TEXTBOOK ABORT：{c} 的法規重點摘要還沒經過獨立核對，或核對後被改過")

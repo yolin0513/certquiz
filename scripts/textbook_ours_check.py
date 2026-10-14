@@ -143,6 +143,12 @@ def lock(topic, what):
     if bad:
         print(f"LOCK ABORT：{p.name} 有空白或格式不對：{bad[:5]}")
         return 2
+    # 判斷檔的題號要跟單子完全一致（代理漏判、多判都擋；2026-10-14 寫手漏填過一題）
+    want = [l[3:].strip() for l in p.with_suffix(".md").read_text(encoding="utf-8").splitlines() if l.startswith("## ")]
+    want = [w for w in want if w.startswith("bic-")]
+    if sorted(want) != sorted(R):
+        print(f"LOCK ABORT：{p.name} 題號跟單子不一致：少 {sorted(set(want) - set(R))[:5]} 多 {sorted(set(R) - set(want))[:5]}")
+        return 2
     log(f"ours-{what}-lock", p) if what != "extra" else log("ours-extra-lock", p)
     print(f"LOCK OK：{p.name}")
     return 0
