@@ -29,7 +29,7 @@ import textbook_ours_check as OC  # noqa: E402
 ROOT = Path(__file__).resolve().parent.parent
 D = ROOT / "data" / "local" / "教材"
 OUT = D / "textbook-ethics.json"
-FILLED = ["E1", "E2", "E3", "E4"]   # 每通過一組就加進來（docs/M 第十一節）
+FILLED = ["E1", "E2", "E3", "E4", "E5", "E6", "E7"]   # 每通過一組就加進來（docs/M 第十一節）
 LAWNAME = re.compile(r"「[^」]*(辦法|準則|規則|要點|注意事項|公約|條例|法)」|依據|依[^，。；]{0,12}規定|主管機關規定")
 NOLAW = ("這一科沒有「法規重點」：職業道德的題目只有 3.4% 點名法規，而且多半是原則題，指不出可以對照的條文。"
          "所以每題只有兩種結果——「我們寫的（未查證）」或「沒有說明」。這不是少做了一層，是這一科沒有那一層可做。")
