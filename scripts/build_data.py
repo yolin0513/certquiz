@@ -406,7 +406,7 @@ def build_local(certs, check_only):
             "generated": date.today().isoformat(),
             "counts": {"total": len(items), "active": active, "dupGroups": n_groups, "dupMarked": n_marked,
                        "bySource": {s: sum(1 for q in items if q["source"] == s) for s in sorted({q["source"] for q in items})}},
-            "notice": "本機自用：題目來自使用者自行取得的官方歷屆試題 PDF。不得上傳、不得散布。",
+            "notice": "本機自用：題目來自使用者自行取得的官方歷屆試題 PDF。只供本人使用、不得散布。",
             "questions": items,
         }
         perr = attach_points(cid, items, pack) or attach_law(cid, items, pack) or attach_textbook(cid, items, pack)

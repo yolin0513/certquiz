@@ -97,7 +97,7 @@ def main():
     names = "、".join(I.PART_NAME[q["subject"]] + "第 " + str(q["qno"]) + " 題" for q in changed)
     print(f"  正解換了的題：{len(changed)} 題（{names}）")
     pack = {"format": "certquiz-import", "version": 1, "cert": "ethics",
-            "note": "證基會公告題庫（113 年版與 116 年版）。116 年版是考試範圍（2027-01-01 起適用）；113 年版裡已刪除或改過的題標 scope: outside。只放本機。",
+            "note": "證基會公告題庫（113 年版與 116 年版）。116 年版是考試範圍（2027-01-01 起適用）；113 年版裡已刪除或改過的題標 scope: outside。只供本人使用、不得散布。",
             "sources": {k: {"file": v["file"], "sha256": v["sha256"], "official": v["official"]} for k, v in banks.items()},
             "counts": {"total": len(qs), "inScope": len(in_scope), "outside": len(outside), "dup": sum(1 for q in qs if q.get("dupOf")),
                        "answerChanged": len(changed)},
