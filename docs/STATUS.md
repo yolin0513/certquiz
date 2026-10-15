@@ -393,10 +393,19 @@
 - **Claude 桌面版的檔案瀏覽窗格似乎會隱藏被 `.gitignore` 排除的路徑**（2026-10-15，**推論，驗證中**）：使用者從另一台電腦的 Claude 桌面版瀏覽這個 Session 的檔案，看得到其他資料夾、看不到 `data/local/`。檔案就在這台機器上，所以跟「有沒有上 git」無關；我們先前一直以為那是「不在 git 上所以看不到」。
   - **影響**：如果成立，**所有放在 gitignore 目錄裡的產出，使用者從遠端一律看不到**。
   - **驗證**：兩份教材 HTML 複製到 `教材/`（沒被 gitignore 排除、不加入版控），請使用者從遠端看出不出現。出現就證明成立，不出現就是別的原因。驗證後把「推論」改成「實測」或刪掉這條。
-  - **`教材/` 為什麼安全**：實測把兩份分別加入暫存區，`selfcheck.py` 都以 R7 擋下（含 599／793 題題幹）；push 前的 `--history` 也跑 R7。**不能為了乾淨改 `.gitignore` 排除它**——排除了使用者就又看不到了。注意：這個 repo 沒有 pre-commit 掛鉤，commit 本身不會被擋，擋在 push（pre-push 掛鉤與 pushsafe）。
+  - **`教材/` 為什麼安全**：實測把兩份分別加入暫存區，`selfcheck.py` 都以 R7 擋下（含 599／793 題題幹）；push 前的 `--history` 也跑 R7。**不能為了乾淨改 `.gitignore` 排除它**——排除了使用者就又看不到了。注意：這個 repo 沒有 pre-commit 掛鉤，commit 本身不會被擋，擋在 push（見「待辦」第 1 筆）。
+  - **推送腳本的具名白名單**（2026-10-15，Dispatch 准）：`pushsafe.sh` 原本遇到任何未追蹤檔就拒推。現在只放行 `教材/` 底下**沒追蹤**的檔；暫存了的、改過的、任何其他位置的未追蹤檔照樣擋。`test_pushsafe.py` 的情境 F（只有 教材/ → 推得上去）、G（另外還有別的未追蹤檔 → 擋）、H（教材/ 的檔被暫存 → 擋）守這件事；`--mutate` 把白名單改成萬用，G 必須因為**真的推上去**而變紅（實測 MUTATION CAUGHT）。**「推送前把資料夾搬走、推完再搬回來」的做法廢掉**：中途出錯，檔案就留在暫存區，使用者那邊看不到，也不會有任何提醒。
+  - 順帶查到：`test_pushsafe.py` 從 `test_verify_live` 加進推送閘門後就跑不過了——暫存 clone 沒有本機匯入包，閘門停在 `test_verify_live`，後面的情境都「因為別的原因被擋」（推得上去的被擋，該由歷史掃描擋的也被這一關擋）。它不在推送閘門裡、只在改 pushsafe 時手動跑，所以一直沒人發現。另外，C、D 兩個情境當時只看回傳值也還是綠的，要看擋下理由才看得出擋錯了關。現在 clone 會複製一份 `data/local/import`。
 - 其他已記在「踩過的坑」的平台行為（不重複）：Windows 上 subprocess 叫 `bash` 會找到 WSL bash；`pdftotext` 是 xpdf 4.00（沒有裁切參數）、`-table` 讀答案卷會整欄錯位；Write／Edit 工具會把 `\u00a0` 這類跳脫字寫成真的不可見字元；heredoc 裡的 `\n` 會被寫成真的換行；無頭瀏覽器的 `setOfflineMode` 管不到 Service Worker。
 
 ## 已知不一致與技術債
+
+### 待辦（不急，但要有紀錄）
+
+1. **沒有 pre-commit 掛鉤：commit 不會被自查擋，只有 push 會**（2026-10-15，Dispatch 定為待辦、先不做）。
+   - 現在夠用的理由：東西要外洩必須經過推送，而推送前（pre-push 掛鉤與 pushsafe 的 `selfcheck.py --history`）擋得住。
+   - **性質**：commit 和 push 之間有一段時間，**那段時間裡題幹原文已經在 git 歷史裡**。如果有人在那段時間改寫歷史（擋下的 commit 被別的 commit 蓋過，但原 commit 還在 reflog）、或推到 `origin` 以外的遠端（pushsafe 只管它推的那一次），保護就失效了。
+   - 做的時候：`.githooks/pre-commit` 跑 `selfcheck.py`（暫存區模式），加進 `test_pushsafe.py` 的情境，並用突變證明。
 
 ### 未解之事（沒有解決，只是暫時沒再發生）
 
