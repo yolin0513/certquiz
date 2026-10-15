@@ -88,6 +88,14 @@ def main():
         for k, v in (("core.hooksPath", ".githooks"), ("user.email", "t@users.noreply.github.com"), ("user.name", "t")):
             sh(["git", "config", k, v], work)
         print(f"• 暫存 clone 的 origin 已換成假遠端（真 repo 的 origin 沒有被碰）")
+        # clone 沒有本機匯入包（gitignored）：test_verify_live 的情境 C 會 ABORT，整條閘門在它那裡就停了，
+        # 後面的情境全都「因為別的原因被擋」（2026-10-15 發現：A、F 預期推得上去卻被擋，而 C、D 的擋法不是它們該驗的那一關）。
+        # 複製進暫存 clone（同樣被 .gitignore 排除、隨暫存目錄刪掉）。
+        src = ROOT / "data" / "local" / "import"
+        if not src.is_dir():
+            print("TEST-PUSHSAFE ABORT：本機沒有 data/local/import，推送閘門在暫存 clone 跑不完")
+            return 2
+        shutil.copytree(src, work / "data" / "local" / "import")
         if mutate:
             ps = work / "scripts" / "pushsafe.sh"
             t = ps.read_text(encoding="utf-8")
@@ -98,7 +106,7 @@ def main():
             ps.write_bytes(t.replace(line, r"UNTRACKED_OK='^\?\? '").encode("utf-8"))
             sh(["git", "commit", "-q", "--no-verify", "-am", "mutate: wildcard"], work)
             print("• 突變：白名單改成萬用（放行所有沒追蹤的檔）")
-        results = {}
+        results, lasts = {}, {}
 
         def case(desc, expect_rc, reason, setup=None, expect_remote=None):
             """reason：最後一行 PUSHSAFE 輸出必須含的字。只看回傳值不夠——腳本沒跑起來也會回 1。"""
@@ -115,6 +123,7 @@ def main():
                 return
             ok = rc == expect_rc and after == want and reason in last
             results[desc[0]] = ok
+            lasts[desc[0]] = last
             print(f"{'✓' if ok else '✗'} {desc}：回傳 {rc}（預期 {expect_rc}），假遠端 {'有變' if after != before else '沒變'}｜{last}")
             fails += 0 if ok else 1
 
@@ -169,10 +178,11 @@ def main():
             print(f"✗ 暫存目錄沒刪掉：{tmp.name}")
             fails += 1
     if mutate:
-        if results.get("G") is False:
+        # G 要「因為白名單放行而推上去」才算抓到；被別的關卡擋下的紅不算
+        if results.get("G") is False and "推送成功" in lasts.get("G", ""):
             print("MUTATION CAUGHT：白名單改成萬用時，情境 G 變紅")
             return 0
-        print("MUTATION NOT CAUGHT：白名單改成萬用，情境 G 仍然通過——G 沒有在驗它該驗的事")
+        print(f"MUTATION NOT CAUGHT：白名單改成萬用，情境 G 沒有因為被放行而推上去（{lasts.get('G', '沒跑')}）")
         return 1
     if fails:
         print(f"TEST-PUSHSAFE FAILED：{fails} 項不符")
