@@ -3,7 +3,7 @@
 """
 U7：「反覆考過的規定」使用者抽查單（docs/K：從我核對過的與沒核對過的各抽一半，Dispatch 2026-10-08 定的方式）
 -------------------------------------------------------------------------------
-  python -u scripts/study_spotcheck.py      產生 data/local/抽檢/使用者_考點抽查.md（給使用者）＋ 考點抽查-key.json（對照，使用者不用看）
+  python -u scripts/study_spotcheck.py      產生 給使用者/使用者_考點抽查.md（給使用者）＋ 考點抽查-key.json（對照，使用者不用看）
 
 母體：本機匯入包的 138 個考點群組。
   核對過＝第二級（跨期相似，含 1+2）：我逐組並排核對過、混入假組驗過的 42 組。
@@ -28,7 +28,7 @@ for _s in (sys.stdout, sys.stderr):
 ROOT = Path(__file__).resolve().parent.parent
 PACK = ROOT / "data" / "local" / "import" / "bic-匯入包.json"
 OUTDIR = ROOT / "data" / "local" / "抽檢"
-SHEET = OUTDIR / "使用者_考點抽查.md"
+SHEET = ROOT / "給使用者" / "使用者_考點抽查.md"   # 給使用者看的直接寫到 給使用者/；對照 KEY 留在本機排除目錄（他不該看到答案）
 KEY = OUTDIR / "考點抽查-key.json"
 LOG = ROOT / "data" / "local" / "study" / "log.tsv"
 SEED = 20261012
@@ -77,6 +77,7 @@ def main():
         md += ["你的判斷：☐ 是同一條規定　☐ 不是　☐ 看不出來　（為什麼：＿＿＿＿）", "", "---", ""]
         key.append({"no": i, "point": p["id"], "half": half, "level": p["level"], "kind": p.get("kind", "rule"), "ids": p["ids"]})
     OUTDIR.mkdir(parents=True, exist_ok=True)
+    SHEET.parent.mkdir(parents=True, exist_ok=True)
     SHEET.write_text("\n".join(md), encoding="utf-8")
     KEY.write_text(json.dumps({"seed": SEED, "per_half": PER_HALF, "population": {"核對過": len(reviewed), "沒核對過": len(unreviewed)},
                                "sample": key}, ensure_ascii=False, indent=1), encoding="utf-8")

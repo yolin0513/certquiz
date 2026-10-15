@@ -191,7 +191,7 @@
 
 ## 10. HTML 重點整理第一階段：結果（2026-10-12；方法見第 9 節，算之前提交於 7f9e664，程式先於結果提交於 e80129c）
 
-**產出**：`data/local/sfi/ethics-重點整理.html`（只放本機；含官方題目的選項原文與差異題的題幹）。程式 `scripts/ethics_stats.py`；外觀檢查 `scripts/check_html.mjs`。
+**產出**：`給使用者/ethics-重點整理.html`（2026-10-15 起；原本在 `data/local/sfi/`。不入版控；含官方題目的選項原文與差異題的題幹）。程式 `scripts/ethics_stats.py`；外觀檢查 `scripts/check_html.mjs`。
 
 **母體核對**：讀到常識 558／應該 558、道德 616／應該 616、選項 4,696／應該 4,696。
 

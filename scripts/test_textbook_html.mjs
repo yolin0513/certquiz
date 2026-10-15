@@ -24,7 +24,7 @@ const check = (d, ok, detail = '') => { out(`${ok ? '✓' : '✗'} ${d}${ok ? ''
 
 // 參數 ethics：測職業道德那一份（只有兩層，沒有法規重點；docs/M 第十一節）
 const CERT = process.argv.includes('ethics') ? 'ethics' : 'bic';
-const FILE = join(ROOT, 'data', 'local', '教材', CERT === 'ethics' ? '職業道德教材草稿.html' : '教材草稿.html');
+const FILE = join(ROOT, '給使用者', CERT === 'ethics' ? '職業道德教材草稿.html' : '教材草稿.html');
 const TB = JSON.parse(readFileSync(join(ROOT, 'data', 'local', '教材', CERT === 'ethics' ? 'textbook-ethics.json' : 'textbook.json'), 'utf-8'));
 // 所有已做的章合在一起看（每一章的章首都要有「沒有說明＝純粹要背」那一句）
 const filledCh = TB.chapters.filter(c => c.items);

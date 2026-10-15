@@ -140,7 +140,8 @@ def main():
     write_sheet(OUT / "claude_核對.md", render(
         mine, f"Claude 核對清單（{N1} 題，種子 {SEED_CLAUDE}）",
         ["逐題對照官方 PDF 的頁面影像：題幹、四個選項、答案。"], False))
-    write_sheet(OUT / "使用者_複核.md", render(
+    (ROOT / "給使用者").mkdir(exist_ok=True)
+    write_sheet(ROOT / "給使用者" / "使用者_複核.md", render(   # 給使用者看的直接寫到 給使用者/
         user, f"TABF 題庫抽檢單（{N2} 題）",
         [f"這 {N2} 題是從 Claude 沒核對過的 {len(rest)} 題裡隨機抽的（種子 {SEED_USER}，重跑會抽到同一批）。",
          "每題寫了：哪一份 PDF、第幾頁、第幾題，以及程式轉出來的題目、選項和答案。",

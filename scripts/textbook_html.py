@@ -3,7 +3,7 @@
 """
 教材草稿 HTML（電腦上看；使用者 2026-10-13：HTML 與 App 都要做，題目與說明同一份來源）
 -------------------------------------------------------------------------------
-  python -u scripts/textbook_html.py          讀 data/local/教材/textbook.json（唯一來源）＋本機匯入包的題目文字 → data/local/教材/教材草稿.html
+  python -u scripts/textbook_html.py          讀 data/local/教材/textbook.json（唯一來源）＋本機匯入包的題目文字 → 給使用者/教材草稿.html
   python -u scripts/textbook_html.py ethics   職業道德：textbook-ethics.json → 職業道德教材草稿.html（只有兩層：我們寫的／沒有說明）
 
 設計要求（Dispatch 2026-10-13）：互動失效時內容仍要讀得完整——答案、說明、留白說明都「預設展開、程式執行時才收合」，
@@ -30,7 +30,8 @@ D = L / "教材"
 CERT = (sys.argv[1:] or ["bic"])[0]
 CFG = {"bic": {"tb": "textbook.json", "pack": "bic-匯入包.json", "out": "教材草稿.html", "title": "內控教材草稿", "name": "內控"},
        "ethics": {"tb": "textbook-ethics.json", "pack": "ethics-匯入包.json", "out": "職業道德教材草稿.html", "title": "職業道德教材草稿", "name": "職業道德"}}[CERT]
-OUT = D / CFG["out"]
+# 給使用者看的產出一律直接寫到 給使用者/（沒被 gitignore 排除，他從另一台電腦的檔案窗格看得到；不入版控，自查 R1＋R7 擋）
+OUT = ROOT / "給使用者" / CFG["out"]
 esc = html.escape
 # 職業道德只有兩層（docs/M 第十一節）：章首與頁首都要先解釋為什麼沒有「法規重點」
 NOLAW = "這一科沒有「法規重點」：職業道德的題目只有 3.4% 點名法規，而且多半是原則題，指不出可以對照的條文。所以每題只有兩種結果——「我們寫的（未查證）」或「沒有說明」。這不是少做了一層，是這一科沒有那一層可做。"
@@ -203,6 +204,7 @@ label{font-size:.92rem}input,select{color:var(--fg);accent-color:var(--pri)}sele
 <button type="button" id="open-all">全部展開</button><button type="button" id="close-all">全部收起</button><span class="muted" id="cnt"></span></div>
 {''.join(sections)}
 </main><script>{js}</script></body></html>"""
+    OUT.parent.mkdir(exist_ok=True)
     OUT.write_text(page, encoding="utf-8")
     print(f"TEXTBOOK-HTML OK：{len(filled)} 章 {n} 題、{tot['cards']} 張卡；法規重點 {ne}、我們寫的 {no}、沒有說明 {np_} → {OUT}")
     return 0

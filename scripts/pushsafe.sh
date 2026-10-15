@@ -16,11 +16,11 @@ branch="$(git symbolic-ref --short -q HEAD || true)"
 [ "$branch" = "main" ] || die "HEAD 不在 main 上（現在是 ${branch:-分離的 HEAD}）"
 PIN="$(git rev-parse HEAD)"
 say "鎖定 commit $PIN"
-# 白名單：刻意不進版控、又不能用 .gitignore 排除的路徑（docs/STATUS.md「已知平台行為」：桌面版檔案窗格似乎看不到 gitignored 路徑）。
+# 白名單：刻意不進版控、又不能用 .gitignore 排除的路徑（docs/STATUS.md「已知平台行為」：桌面版檔案窗格看不到 gitignored 路徑，實測）。
 # 只放行這些路徑底下「沒追蹤」的檔（?? 開頭）；暫存了的、改過的、任何其他位置的未追蹤檔照樣擋。
 # 一個路徑一個具名例外，不要改成萬用（test_pushsafe.py 情境 G 與 --mutate 驗這件事）。
-#   教材/：兩份教材 HTML（含題幹；自查 R7 會擋，進不了 commit）
-UNTRACKED_OK='^\?\? 教材/'
+#   給使用者/：所有要給使用者看的產出（教材 HTML、抽檢單、重點整理）；產生它們的腳本直接寫到這裡。自查 R1（路徑）＋R7（題幹）擋，進不了 commit
+UNTRACKED_OK='^\?\? 給使用者/'
 dirty="$(git -c core.quotePath=false status --porcelain -uall | grep -Ev "$UNTRACKED_OK" || true)"
 [ -z "$dirty" ] || die "工作區不乾淨（有沒 commit 的改動或沒追蹤的檔）：$(printf '%s' "$dirty" | head -3 | tr '\n' ' ')"
 git remote get-url "$REMOTE" >/dev/null 2>&1 || die "沒有遠端 $REMOTE"

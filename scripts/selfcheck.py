@@ -8,7 +8,7 @@
 這支程式不看 .gitignore，直接看「要進 commit 的東西」本身。
 
 規則（每一條都有 --selftest 的假樣本證明會紅）：
-    R1 路徑：refs/、data/local/ 底下的任何檔；副檔名 .pdf .docx .xlsx .pptx（不分大小寫）
+    R1 路徑：refs/、data/local/、給使用者/ 底下的任何檔（給使用者/ 刻意不被 gitignore 排除——桌面版檔案窗格看不到排除的路徑——所以只靠這條與 R7 擋）；副檔名 .pdf .docx .xlsx .pptx（不分大小寫）
     R2 內容：檔頭是 %PDF（改了副檔名的 PDF）、或是 Office 文件（PK 壓縮檔且含 word/ xl/ ppt/）
     R3 題目檔：有一行是 `source: tabf-official` 或 `source: user-import`（題庫原始檔的來源欄位）
     R4 本機路徑：Windows 使用者目錄、Git Bash 與 macOS 與 Linux 的使用者目錄寫法、
@@ -57,7 +57,7 @@ INVISIBLE = {0x00A0: "NO-BREAK SPACE", 0x202F: "NARROW NO-BREAK SPACE", 0x200B: 
              0x200C: "ZERO WIDTH NON-JOINER", 0x200D: "ZERO WIDTH JOINER", 0x2060: "WORD JOINER",
              0xFEFF: "BOM / ZERO WIDTH NO-BREAK SPACE", 0x00AD: "SOFT HYPHEN"}
 
-BLOCKED_DIRS = ("refs/", "data/local/")
+BLOCKED_DIRS = ("refs/", "data/local/", "給使用者/")
 PRIVATE_LIST = ".selfcheck-private.txt"
 # R6 (a)：一定要以人稱開頭，避免「摘要考題」「銀行主管是否也要考」這類一般敘述誤判
 PERSONAL_RE = re.compile(
@@ -296,6 +296,7 @@ def selftest():
         ("refs/ 底下的假 PDF（-f 強制加入）", "refs/tabf/fake.pdf", b"%PDF-1.7 fake\n", True, {"R1", "R2"}),
         ("data/local/ 底下的題目檔（-f）", "data/local/bic.txt",
          "=== bic-law-t49-001\nsource: tabf-official\n".encode(), True, {"R1", "R3"}),
+        ("給使用者/ 底下的檔（沒被 gitignore 排除，一般 git add 就加得進去）", "給使用者/notes.md", "給使用者看的說明\n".encode(), False, {"R1"}),
         ("改成 .txt 的 PDF", "docs/renamed.txt", b"%PDF-1.4 fake\n", False, {"R2"}),
         ("其他目錄的 .PDF（-f）", "docs/x.PDF", b"not really a pdf\n", True, {"R1"}),
         ("假的 docx（-f）", "docs/y.docx", b"PK\x03\x04....word/document.xml", True, {"R1", "R2"}),

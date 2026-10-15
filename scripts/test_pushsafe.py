@@ -9,9 +9,9 @@ pushsafe.sh 的驗法：在暫存目錄 clone 一份、接一個假遠端（暫�
     C 用 --no-verify 繞過 commit 自查，commit 一個 PDF 再刪掉 → 回 1（歷史掃描抓到），假遠端不動
     D 用 --no-verify commit 帶 sendBeacon 的 js → 回 1（隱私檢查抓到），假遠端不動
     E HEAD 不在 main → 回 1
-    F 只有白名單 教材/ 底下有沒追蹤的檔 → 回 0（照常推送）
-    G 教材/ 有沒追蹤的檔，另外別的位置也有一個 → 回 1（白名單只放行具名路徑）
-    H 教材/ 底下的檔被加入暫存區 → 回 1（白名單只放行「沒追蹤」，不放行暫存的）
+    F 只有白名單 給使用者/ 底下有沒追蹤的檔 → 回 0（照常推送）
+    G 給使用者/ 有沒追蹤的檔，另外別的位置也有一個 → 回 1（白名單只放行具名路徑）
+    H 給使用者/ 底下的檔被加入暫存區 → 回 1（白名單只放行「沒追蹤」，不放行暫存的）
 --mutate：在暫存 clone 裡把白名單改成萬用（放行所有沒追蹤的檔）再跑一次；G 必須變紅，才印 MUTATION CAUGHT、回 0。
   證明 G 真的在驗「只放行一個資料夾」，不是看起來只放行一個、實際上全放行。
 結束碼：0 全部符合（--mutate：突變被抓到）；1 有不符（--mutate：突變沒被抓到）；2 前提不成立。
@@ -71,7 +71,7 @@ def pushsafe(work):
 def main():
     mutate = "--mutate" in sys.argv[1:]
     st = sh(["git", "-c", "core.quotePath=false", "status", "--porcelain", "-uall"], ROOT).stdout.decode("utf-8", "replace")
-    if [ln for ln in st.splitlines() if not ln.startswith("?? 教材/")]:   # 同 pushsafe.sh 的白名單
+    if [ln for ln in st.splitlines() if not ln.startswith("?? 給使用者/")]:   # 同 pushsafe.sh 的白名單
         print("TEST-PUSHSAFE ABORT：真 repo 的工作區不乾淨，先 commit 再測（驗的是已 commit 的版本）")
         return 2
     tmp = Path(tempfile.mkdtemp(prefix=f"certquiz-pushsafe-{os.getpid()}-"))
@@ -99,7 +99,7 @@ def main():
         if mutate:
             ps = work / "scripts" / "pushsafe.sh"
             t = ps.read_text(encoding="utf-8")
-            line = r"UNTRACKED_OK='^\?\? 教材/'"
+            line = r"UNTRACKED_OK='^\?\? 給使用者/'"
             if t.count(line) != 1:
                 print("TEST-PUSHSAFE ABORT：找不到白名單那一行，突變做不了")
                 return 2
@@ -157,21 +157,21 @@ def main():
         sh(["git", "checkout", "-q", "main"], work)
 
         def textbook_only():
-            (work / "教材").mkdir(exist_ok=True)
-            (work / "教材" / "x.html").write_text("x", encoding="utf-8")
-        case("F 只有 教材/ 有沒追蹤的檔 → 照常推送", 0, "推送成功", textbook_only, expect_remote=lambda _b: head())
+            (work / "給使用者").mkdir(exist_ok=True)
+            (work / "給使用者" / "x.html").write_text("x", encoding="utf-8")
+        case("F 只有 給使用者/ 有沒追蹤的檔 → 照常推送", 0, "推送成功", textbook_only, expect_remote=lambda _b: head())
 
         def textbook_and_stray():
             textbook_only()
             (work / "stray.txt").write_text("x", encoding="utf-8")
-        case("G 教材/ 之外還有沒追蹤的檔 → 擋", 1, "工作區不乾淨", textbook_and_stray)
+        case("G 給使用者/ 之外還有沒追蹤的檔 → 擋", 1, "工作區不乾淨", textbook_and_stray)
         (work / "stray.txt").unlink()
 
         def textbook_staged():
             textbook_only()
-            sh(["git", "add", "教材/x.html"], work)
-        case("H 教材/ 的檔被暫存 → 擋", 1, "工作區不乾淨", textbook_staged)
-        sh(["git", "reset", "-q", "教材/x.html"], work)
+            sh(["git", "add", "給使用者/x.html"], work)
+        case("H 給使用者/ 的檔被暫存 → 擋", 1, "工作區不乾淨", textbook_staged)
+        sh(["git", "reset", "-q", "給使用者/x.html"], work)
     finally:
         rmtree(tmp)
         if tmp.exists():

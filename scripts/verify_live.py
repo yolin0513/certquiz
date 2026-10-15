@@ -216,7 +216,7 @@ def run():
           not mismatch and not skipped, "；".join(mismatch[:5] + [f"沒比對到：{s}" for s in skipped[:5]]))
 
     # ---- V3 本機專用路徑線上都是 404
-    local_only = ["data/local/import/bic-匯入包.json", "data/local/src/bic/tabf-p49-law.txt", "data/local/抽檢/claude_核對.md",
+    local_only = ["data/local/import/bic-匯入包.json", "data/local/src/bic/tabf-p49-law.txt", "data/local/抽檢/claude_核對.md", "給使用者/教材草稿.html",
                   "refs/tabf/past/第49期_一般金融_法規.pdf", "refs/user/收件清單.tsv", ".selfcheck-private.txt", "data/q/bic.json"]
     leaks = [f"{p}（HTTP {s}）" for p in local_only for s, _ in [fetch(base + p)] if s != 404]
     check(f"V3 本機專用的 {len(local_only)} 個路徑線上都是 404", not leaks, "；".join(leaks))

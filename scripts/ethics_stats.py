@@ -5,7 +5,7 @@
 -------------------------------------------------------------------------------
   python -u scripts/ethics_stats.py classify   題型分類＋抽驗尺樣本（每類 20 題，種子 20261013）→ 給另一個代理獨立判斷
   python -u scripts/ethics_stats.py lock       鎖定代理的判斷檔（雜湊入 data/local/sfi/log.tsv）
-  python -u scripts/ethics_stats.py build      算統計、比對驗尺、產出 HTML（data/local/sfi/ethics-重點整理.html，只放本機）
+  python -u scripts/ethics_stats.py build      算統計、比對驗尺、產出 HTML（給使用者/ethics-重點整理.html，不入版控）
 所有門檻與口徑照 docs/L 第 9 節，寫在下面的常數裡；揭曉後不改。
 
 第二輪（docs/L 第 11 節，算之前寫定並提交 638c60c）：
@@ -42,7 +42,7 @@ SAMPLE_MD = D / "stats-ruler-sample.md"
 JUDGE = D / "stats-ruler-judge.tsv"
 KEY = D / "stats-ruler-key.json"
 STATS = D / "ethics-stats.json"
-HTML_OUT = D / "ethics-重點整理.html"
+HTML_OUT = I.ROOT / "給使用者" / "ethics-重點整理.html"   # 給使用者看的產出直接寫到 給使用者/（舊版 round1／round2 留在 data/local/sfi/）
 SEED = 20261013
 PER_CLASS = 20
 EXPECT = {"gen": 558, "eth": 616}          # 116 年版官方公告
@@ -471,6 +471,7 @@ def build():
         stats["diagnosis"] = DIAG3.read_text(encoding="utf-8").strip() if DIAG3.exists() else ""
         print("不一致的配對（程式→判斷者）：" + "、".join(f"{k} {v}" for k, v in stats["disagree_pairs"]))
     STATS.write_text(json.dumps(stats, ensure_ascii=False, indent=1, default=list), encoding="utf-8")
+    HTML_OUT.parent.mkdir(exist_ok=True)
     HTML_OUT.write_text(render(stats, diff, old, new), encoding="utf-8")
     print(f"STATS OK：{STATS}；HTML → {HTML_OUT}")
     return 0
@@ -736,12 +737,12 @@ nav a{color:var(--pri)}nav{display:flex;flex-wrap:wrap;gap:6px 14px;font-size:.9
                       '<div class="tw"><table><thead><tr><th>做法</th><th>一致</th><th>沒過的地方</th></tr></thead><tbody>' + rows3 + '</tbody></table></div>'
                       f'<p><b>第三輪不一致的題</b>：{esc(pairs) or "—"}。</p>{diag}{mc_html}'
                       '<p>能答的是「哪些說法常被選為答案」「哪些說法常被拿來當誘答」——那是直接數出來的，不靠任何分類。用的時候記得看題目問的是對還是錯。</p>'
-                      '<h3>同一個資料夾裡的三份重點整理：哪份是最新的</h3>'
+                      '<h3>三份重點整理：哪份是最新的</h3>'
                       '<div class="tw"><table><thead><tr><th>檔名</th><th>是什麼</th></tr></thead><tbody>'
-                      '<tr><td>ethics-重點整理.html</td><td><b>最新版，以這份為準</b>（三輪關鍵字＋換方法的結果都在這份；就是你正在看的這份）</td></tr>'
-                      '<tr><td>ethics-重點整理-round2.html</td><td>第二輪的舊版，只留作紀錄。題型驗尺沒過</td></tr>'
-                      '<tr><td>ethics-重點整理-round1.html</td><td>第一輪的舊版，只留作紀錄。題型驗尺沒過，組合型選項還混在排行裡（有兩份排行的前 10 名有兩到三成是假的）</td></tr>'
-                      '</tbody></table></div><p class="muted">三份檔名看起來都很合理。沒有 round 字樣的那份才是最新的；舊版不要拿來背。</p></section>')
+                      '<tr><td>給使用者/ethics-重點整理.html</td><td><b>最新版，以這份為準</b>（三輪關鍵字＋換方法的結果都在這份；就是你正在看的這份）</td></tr>'
+                      '<tr><td>data/local/sfi/ethics-重點整理-round2.html</td><td>第二輪的舊版，只留作紀錄。題型驗尺沒過</td></tr>'
+                      '<tr><td>data/local/sfi/ethics-重點整理-round1.html</td><td>第一輪的舊版，只留作紀錄。題型驗尺沒過，組合型選項還混在排行裡（有兩份排行的前 10 名有兩到三成是假的）</td></tr>'
+                      '</tbody></table></div><p class="muted">三份檔名看起來都很合理。放在「給使用者」資料夾、沒有 round 字樣的那份才是最新的；舊版不要拿來背。</p></section>')
     facts = [("考試", "金融市場常識與職業道德（共同科目）"), ("題數／時間", "一百題，四選一單選，六十分鐘"), ("配分", "金融市場常識 50%、職業道德 50%"),
              ("及格", "七十分；成績保留五年"), ("報名費", "300 元（2027 年 1 月 1 日起；2026 年底前的場次是 250 元）"),
              ("考試範圍", "116 年版題庫（1,174 題），2027 年 1 月 1 日起適用"),
