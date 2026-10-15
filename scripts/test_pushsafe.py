@@ -9,7 +9,12 @@ pushsafe.sh 的驗法：在暫存目錄 clone 一份、接一個假遠端（暫�
     C 用 --no-verify 繞過 commit 自查，commit 一個 PDF 再刪掉 → 回 1（歷史掃描抓到），假遠端不動
     D 用 --no-verify commit 帶 sendBeacon 的 js → 回 1（隱私檢查抓到），假遠端不動
     E HEAD 不在 main → 回 1
-結束碼：0 全部符合；1 有不符；2 前提不成立。
+    F 只有白名單 教材/ 底下有沒追蹤的檔 → 回 0（照常推送）
+    G 教材/ 有沒追蹤的檔，另外別的位置也有一個 → 回 1（白名單只放行具名路徑）
+    H 教材/ 底下的檔被加入暫存區 → 回 1（白名單只放行「沒追蹤」，不放行暫存的）
+--mutate：在暫存 clone 裡把白名單改成萬用（放行所有沒追蹤的檔）再跑一次；G 必須變紅，才印 MUTATION CAUGHT、回 0。
+  證明 G 真的在驗「只放行一個資料夾」，不是看起來只放行一個、實際上全放行。
+結束碼：0 全部符合（--mutate：突變被抓到）；1 有不符（--mutate：突變沒被抓到）；2 前提不成立。
 """
 import os
 import shutil
@@ -64,7 +69,9 @@ def pushsafe(work):
 
 
 def main():
-    if sh(["git", "status", "--porcelain"], ROOT).stdout.strip():
+    mutate = "--mutate" in sys.argv[1:]
+    st = sh(["git", "-c", "core.quotePath=false", "status", "--porcelain", "-uall"], ROOT).stdout.decode("utf-8", "replace")
+    if [ln for ln in st.splitlines() if not ln.startswith("?? 教材/")]:   # 同 pushsafe.sh 的白名單
         print("TEST-PUSHSAFE ABORT：真 repo 的工作區不乾淨，先 commit 再測（驗的是已 commit 的版本）")
         return 2
     tmp = Path(tempfile.mkdtemp(prefix=f"certquiz-pushsafe-{os.getpid()}-"))
@@ -81,6 +88,17 @@ def main():
         for k, v in (("core.hooksPath", ".githooks"), ("user.email", "t@users.noreply.github.com"), ("user.name", "t")):
             sh(["git", "config", k, v], work)
         print(f"• 暫存 clone 的 origin 已換成假遠端（真 repo 的 origin 沒有被碰）")
+        if mutate:
+            ps = work / "scripts" / "pushsafe.sh"
+            t = ps.read_text(encoding="utf-8")
+            line = r"UNTRACKED_OK='^\?\? 教材/'"
+            if t.count(line) != 1:
+                print("TEST-PUSHSAFE ABORT：找不到白名單那一行，突變做不了")
+                return 2
+            ps.write_bytes(t.replace(line, r"UNTRACKED_OK='^\?\? '").encode("utf-8"))
+            sh(["git", "commit", "-q", "--no-verify", "-am", "mutate: wildcard"], work)
+            print("• 突變：白名單改成萬用（放行所有沒追蹤的檔）")
+        results = {}
 
         def case(desc, expect_rc, reason, setup=None, expect_remote=None):
             """reason：最後一行 PUSHSAFE 輸出必須含的字。只看回傳值不夠——腳本沒跑起來也會回 1。"""
@@ -96,6 +114,7 @@ def main():
                 fails += 1
                 return
             ok = rc == expect_rc and after == want and reason in last
+            results[desc[0]] = ok
             print(f"{'✓' if ok else '✗'} {desc}：回傳 {rc}（預期 {expect_rc}），假遠端 {'有變' if after != before else '沒變'}｜{last}")
             fails += 0 if ok else 1
 
@@ -126,15 +145,39 @@ def main():
         def detach():
             sh(["git", "checkout", "-q", "--detach"], work)
         case("E HEAD 不在 main → 擋", 1, "HEAD 不在 main", detach)
+        sh(["git", "checkout", "-q", "main"], work)
+
+        def textbook_only():
+            (work / "教材").mkdir(exist_ok=True)
+            (work / "教材" / "x.html").write_text("x", encoding="utf-8")
+        case("F 只有 教材/ 有沒追蹤的檔 → 照常推送", 0, "推送成功", textbook_only, expect_remote=lambda _b: head())
+
+        def textbook_and_stray():
+            textbook_only()
+            (work / "stray.txt").write_text("x", encoding="utf-8")
+        case("G 教材/ 之外還有沒追蹤的檔 → 擋", 1, "工作區不乾淨", textbook_and_stray)
+        (work / "stray.txt").unlink()
+
+        def textbook_staged():
+            textbook_only()
+            sh(["git", "add", "教材/x.html"], work)
+        case("H 教材/ 的檔被暫存 → 擋", 1, "工作區不乾淨", textbook_staged)
+        sh(["git", "reset", "-q", "教材/x.html"], work)
     finally:
         rmtree(tmp)
         if tmp.exists():
             print(f"✗ 暫存目錄沒刪掉：{tmp.name}")
             fails += 1
+    if mutate:
+        if results.get("G") is False:
+            print("MUTATION CAUGHT：白名單改成萬用時，情境 G 變紅")
+            return 0
+        print("MUTATION NOT CAUGHT：白名單改成萬用，情境 G 仍然通過——G 沒有在驗它該驗的事")
+        return 1
     if fails:
         print(f"TEST-PUSHSAFE FAILED：{fails} 項不符")
         return 1
-    print("TEST-PUSHSAFE OK：5 個情境全部符合")
+    print("TEST-PUSHSAFE OK：8 個情境全部符合")
     return 0
 
 
