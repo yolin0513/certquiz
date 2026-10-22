@@ -20,3 +20,6 @@ node_modules/
 
 # 本機私人清單：真實姓名、任職機構、學校等（commit 前自查 R6 用，絕不入庫）
 .selfcheck-private.txt
+
+# Claude Code 本機設定（autoCompactWindow 等；每台機器自己的，不入庫）
+.claude/settings.local.json
