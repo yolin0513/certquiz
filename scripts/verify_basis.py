@@ -31,6 +31,7 @@ import html
 import json
 import re
 import sys
+import time
 import urllib.error
 import urllib.request
 from pathlib import Path
@@ -64,6 +65,29 @@ def fetch(url: str) -> str:
     req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0 (certquiz verify_basis)"})
     with urllib.request.urlopen(req, timeout=30) as r:
         return r.read().decode("utf-8", "replace")
+
+
+class Unreachable(Exception):
+    """抓取出錯、但不是確定的 404（逾時、限流 429、5xx、連線失敗）。不能當成「沒有」——呼叫端要中止、不下結論。"""
+
+
+def fetch_or_absent(url: str):
+    """回傳頁面文字；確定 404 回 None；其他錯誤重試一次，還是失敗就丟 Unreachable。
+    2026-10-22 踩過：授權檢查把所有抓取錯誤都當成「公開版沒有這一頁」，同一天兩次 --recheck，第二次多出 5 題假的「授權查不到」，
+    那 5 頁的原始檔其實都在（之後重抓 200）。抓不到不等於沒有。"""
+    last = None
+    for attempt in range(2):
+        try:
+            return fetch(url)
+        except urllib.error.HTTPError as e:
+            if e.code == 404:
+                return None
+            last = f"HTTP {e.code}"
+        except (urllib.error.URLError, OSError) as e:
+            last = str(e)
+        if attempt == 0:
+            time.sleep(3)
+    raise Unreachable(f"{url}（{last}）")
 
 
 def qhash(quote: str) -> str:
@@ -111,6 +135,14 @@ class Page:
 
 _LICENSE_CACHE = {}
 
+# 有裁量的授權判斷（docs/I）：查不到授權、但已經判斷過可以用的頁面。只認「網址＋查不到的原因」都對得上的情況；
+# 原因變了（例如頁面又搬到別的 repo、或原文不在了）照樣不通過。要改判斷就要改這裡，並同步改 docs/I。
+JUDGED_LICENSE = {
+    "https://learn.microsoft.com/en-us/azure/reliability/availability-zones-overview":
+        ("MicrosoftDocs/reliability-docs 沒有公開版",
+         "docs/I「有裁量的授權判斷：reliability-docs（2026-10-22）」，比照 entra-docs（2026-10-08）"),
+}
+
 
 def license_of(raw: str):
     """回傳 (ok, 說明)。頁面中繼資料 → 原始 repo（-pr 是私有的，對應公開版去掉 -pr）→ 公開版要有這個檔、法律聲明要授權 CC BY 4.0。"""
@@ -124,9 +156,8 @@ def license_of(raw: str):
     if repo not in _LICENSE_CACHE:
         grant = ""
         for fn in ("ThirdPartyNotices.md", "LICENSE"):
-            try:
-                t = fetch(f"https://raw.githubusercontent.com/MicrosoftDocs/{repo}/main/{fn}")
-            except (urllib.error.URLError, OSError):
+            t = fetch_or_absent(f"https://raw.githubusercontent.com/MicrosoftDocs/{repo}/main/{fn}")   # 出錯丟 Unreachable，不寫進快取
+            if t is None:
                 continue
             if "Creative Commons Attribution 4.0" in t or "Attribution 4.0 International" in t:
                 grant = f"{fn} 授權 CC BY 4.0"
@@ -134,10 +165,8 @@ def license_of(raw: str):
         _LICENSE_CACHE[repo] = grant
     if not _LICENSE_CACHE[repo]:
         return False, f"MicrosoftDocs/{repo} 沒有公開版或查不到 CC BY 4.0 授權"
-    try:
-        fetch(f"https://raw.githubusercontent.com/MicrosoftDocs/{repo}/main/{rm.group(2)}")
-    except (urllib.error.URLError, OSError):
-        return False, f"公開版 MicrosoftDocs/{repo} 沒有這一頁的原始檔"
+    if fetch_or_absent(f"https://raw.githubusercontent.com/MicrosoftDocs/{repo}/main/{rm.group(2)}") is None:
+        return False, f"公開版 MicrosoftDocs/{repo} 沒有這一頁的原始檔（HTTP 404）"
     return True, f"MicrosoftDocs/{repo}（{_LICENSE_CACHE[repo]}）"
 
 
@@ -288,7 +317,7 @@ def main(argv):
     if not all(ok for _, ok in rulers):
         print("VERIFY-BASIS ABORT：驗尺失敗")
         return 2
-    bad, licenses, n_quote = [], {}, 0
+    bad, licenses, n_quote, judged_hits = [], {}, 0, []
     for where, q in qs:
         url = q.get("basis", "")
         quote = q.get("basis_quote") or store.get(q.get("id"))
@@ -298,14 +327,25 @@ def main(argv):
             continue
         why = check_one(q, pages[url], quote)
         if url not in licenses:
-            licenses[url] = license_of(pages[url].raw)
-        if not licenses[url][0]:
+            try:
+                licenses[url] = license_of(pages[url].raw)
+            except Unreachable as e:
+                print(f"VERIFY-BASIS ABORT：授權查詢抓不到 {e}——抓不到不等於沒有授權，不能下結論")
+                return 2
+        judged = JUDGED_LICENSE.get(url)
+        if not licenses[url][0] and judged and judged[0] in licenses[url][1]:
+            judged_hits.append(f"{q.get('id')}：{judged[1]}")
+        elif not licenses[url][0]:
             why = (why + "；" if why else "") + f"授權查不到：{licenses[url][1]}"
         if why:
             bad.append(f"{q.get('id')}（{where}）：{why}")
     print(f"• 核對了 {len(qs)}／{expected} 題、{len(pages)} 個官方頁面；其中 {n_quote} 題有本機原文（逐字比對），"
           f"{len(qs) - n_quote} 題只有雜湊（逐格比對）")
     print(f"• 授權查得到的頁面 {sum(1 for v in licenses.values() if v[0])}／{len(licenses)}")
+    if judged_hits:   # 依判斷放行的一定要印出來：「查得到」和「判斷過可以用」不是同一件事
+        print(f"• 授權查不到、依既有判斷放行 {len(judged_hits)} 題：")
+        for j in judged_hits:
+            print(f"    {j}")
     if len(qs) != expected:
         bad.append(f"題數對不上：原始檔有 {expected} 個「=== az900-」，只讀到 {len(qs)} 題")
     if bad:
@@ -313,7 +353,8 @@ def main(argv):
         for b in bad:
             print(f"  {b}")
         return 1
-    print(f"VERIFY-BASIS OK：{len(qs)} 題的依據都還在官方頁面上、在標記的章節裡，頁面授權都查得到")
+    lic_note = f"頁面授權都查得到" if not judged_hits else f"頁面授權查得到，只有 {len(judged_hits)} 題查不到、依既有判斷放行（見上）"
+    print(f"VERIFY-BASIS OK：{len(qs)} 題的依據都還在官方頁面上、在標記的章節裡；{lic_note}")
     return 0
 
 

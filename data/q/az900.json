@@ -125,11 +125,11 @@
    "answer": 3,
    "source": "original-ai",
    "skill": 2,
-   "basis": "https://learn.microsoft.com/en-us/azure/reliability/availability-zones-overview",
-   "basis_anchor": "#datacenters-and-availability-zones",
-   "basis_section": "Datacenters and availability zones",
+   "basis": "https://learn.microsoft.com/en-us/azure/architecture/aws-professional/regions-zones",
+   "basis_anchor": "#availability-zones",
+   "basis_section": "Availability zones",
    "objective": "B.1",
-   "explain": "原文直接定義。同一頁：有些區域只有一個資料中心、有些有多個（選項 1 錯）；可用性區域通常彼此在 100 公里以內（選項 2 錯）；設計上一個區域出問題（例如停電、網路問題），其他區域照常運作（選項 4 錯）。"
+   "explain": "原文直接定義。同一節：一個可用性區域可以包含不只一座資料中心，不要把區域當成單一建築（選項 1 錯）；各區域通常彼此在 100 公里以內（選項 2 錯）；每個區域有各自獨立的電力、冷卻與網路，用意是降低一處停電同時波及多個區域的機會；選項 4 說其他區域「也會一起停止運作」，跟這個設計相反（選項 4 錯）。"
   },
   {
    "id": "az900-b1-002",

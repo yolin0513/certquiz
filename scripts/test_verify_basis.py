@@ -88,6 +88,57 @@ def boom(url):
     raise OSError("network down")
 
 
+N_LIC = 5
+
+
+def license_cases():
+    """授權查詢本身（上面的情境把 license_of 整個換掉，測不到它）。2026-10-22 踩過：抓取出錯被當成「公開版沒有這一頁」。
+    假的 fetch：依網址回內容、丟 404、或丟逾時。"""
+    import urllib.error
+    meta = '<meta name="original_content_git_url" content="https://github.com/MicrosoftDocs/x-docs-pr/blob/live/articles/a.md" />'
+    lic = "https://raw.githubusercontent.com/MicrosoftDocs/x-docs/main/"
+    def mk(table):
+        def f(url):
+            v = table.get(url, 404)
+            if v == 404:
+                raise urllib.error.HTTPError(url, 404, "nf", {}, None)
+            if v == "timeout":
+                raise urllib.error.URLError("timed out")
+            if v == 429:
+                raise urllib.error.HTTPError(url, 429, "rate", {}, None)
+            return v
+        return f
+    ok_lic = "Creative Commons Attribution 4.0 International"
+    cases = [
+        ("授權：法律聲明 CC BY、這一頁原始檔在 → 查得到", {lic + "ThirdPartyNotices.md": ok_lic, lic + "articles/a.md": "x"}, (True, None)),
+        ("授權：repo 沒有公開版（兩份法律文件都 404）→ 查不到", {}, (False, "沒有公開版")),
+        ("授權：這一頁原始檔確定 404 → 查不到、寫明 404", {lic + "ThirdPartyNotices.md": ok_lic}, (False, "HTTP 404")),
+        ("授權：這一頁原始檔逾時 → 不能判「沒有」，丟 Unreachable", {lic + "ThirdPartyNotices.md": ok_lic, lic + "articles/a.md": "timeout"}, "raise"),
+        ("授權：法律聲明被限流 429 → 不能判「沒有」，丟 Unreachable，也不寫進快取", {lic + "ThirdPartyNotices.md": 429}, "raise-nocache"),
+    ]
+    assert len(cases) == N_LIC
+    fails = 0
+    saved = V.fetch, V.time.sleep
+    try:
+        V.time.sleep = lambda s: None
+        for desc, table, want in cases:
+            V._LICENSE_CACHE.clear()
+            V.fetch = mk(table)
+            try:
+                got = V.license_of(meta)
+                ok = isinstance(want, tuple) and got[0] == want[0] and (want[1] is None or want[1] in got[1])
+                shown = got
+            except V.Unreachable as e:
+                ok = isinstance(want, str) and want.startswith("raise") and (want != "raise-nocache" or "x-docs" not in V._LICENSE_CACHE)
+                shown = f"Unreachable（{e}）"
+            print(f"{'✓' if ok else '✗'} {desc}：{shown}")
+            fails += 0 if ok else 1
+    finally:
+        V.fetch, V.time.sleep = saved
+        V._LICENSE_CACHE.clear()
+    return fails
+
+
 def main():
     nq = lambda qid, **k: block(qid, with_quote=False, **k)  # noqa: E731 公開題目檔的樣子：沒有原文
     cases = [
@@ -115,10 +166,21 @@ def main():
          ["核對了 1／2 題", "題數對不上"], PAGE, None, drop_last),
     ]
     fails = sum(0 if run(*c) else 1 for c in cases)
+    fails += license_cases()
+    # 有裁量的授權判斷：網址＋原因都對得上才放行，而且要印出來；原因不同照樣紅
+    saved_j = V.JUDGED_LICENSE
+    try:
+        V.JUDGED_LICENSE = {URL: ("x-docs 沒有公開版", "docs/I 假判斷")}
+        fails += 0 if run("授權查不到、但網址與原因都對得上既有判斷 → 綠、印出依判斷放行", block("az900-b1-001"), 0,
+                          ["依既有判斷放行 1 題", "docs/I 假判斷", "只有 1 題查不到、依既有判斷放行"], PAGE, None, None, (False, "MicrosoftDocs/x-docs 沒有公開版或查不到")) else 1
+        fails += 0 if run("網址對得上判斷、但查不到的原因不同（例如這一頁 404）→ 紅", block("az900-b1-001"), 1,
+                          ["az900-b1-001", "授權查不到"], PAGE, None, None, (False, "公開版 MicrosoftDocs/x-docs 沒有這一頁的原始檔")) else 1
+    finally:
+        V.JUDGED_LICENSE = saved_j
     if fails:
         print(f"TEST-VERIFY-BASIS FAILED：{fails} 項不符")
         return 1
-    print(f"TEST-VERIFY-BASIS OK：{len(cases)} 項全部符合")
+    print(f"TEST-VERIFY-BASIS OK：{len(cases)} 項＋授權查詢 {N_LIC} 項＋既有判斷 2 項全部符合")
     return 0
 
 

@@ -103,12 +103,12 @@ stem: 關於可用性區域（Availability Zone）的敘述，下列何者正確
 4: 其中一個可用性區域發生停電時，同區域的其他可用性區域也會一起停止運作
 answer: 3
 source: original-ai
-basis: https://learn.microsoft.com/en-us/azure/reliability/availability-zones-overview
-basis_anchor: #datacenters-and-availability-zones
-basis_section: Datacenters and availability zones
-basis_hash: a5e14d3c3a84eab566eda78d761faaa86e008dfafcb7e9ba73437842615f3bd6
-basis_len: 106
-explain: 原文直接定義。同一頁：有些區域只有一個資料中心、有些有多個（選項 1 錯）；可用性區域通常彼此在 100 公里以內（選項 2 錯）；設計上一個區域出問題（例如停電、網路問題），其他區域照常運作（選項 4 錯）。
+basis: https://learn.microsoft.com/en-us/azure/architecture/aws-professional/regions-zones
+basis_anchor: #availability-zones
+basis_section: Availability zones
+basis_hash: 55436094f56d48a2b98184a7ffa22fc340cb347b558a04bee59cc5d5af51d082
+basis_len: 113
+explain: 原文直接定義。同一節：一個可用性區域可以包含不只一座資料中心，不要把區域當成單一建築（選項 1 錯）；各區域通常彼此在 100 公里以內（選項 2 錯）；每個區域有各自獨立的電力、冷卻與網路，用意是降低一處停電同時波及多個區域的機會；選項 4 說其他區域「也會一起停止運作」，跟這個設計相反（選項 4 錯）。
 
 === az900-b1-002
 type: single

@@ -49,6 +49,29 @@ Entra 的頁面（條件式存取、Domain Services、MFA、External ID、Entra 
 
 **複查方式**：重讀上面兩份文件；若 Microsoft 修正了 `LICENSE`（改成 CC BY 4.0）或修改法律聲明，更新這一段。`verify_basis.py` 的授權檢查是先看 `ThirdPartyNotices.md`、再看 `LICENSE`，所以這個判斷也寫在程式裡——要改判斷就要改程式。
 
+### 有裁量的授權判斷：reliability-docs（2026-10-22，套用上面 entra-docs 那條既有判斷，不是新決定）
+
+**適用範圍**：只有 `https://learn.microsoft.com/en-us/azure/reliability/availability-zones-overview` 這一頁，目前只有 az900-b1-017 用它當依據。
+
+**查到的事實**：
+- 2026-10-08 授權盤點（STATUS「M3 進度 → 授權盤點」）：那時這一頁對應的公開 repo `MicrosoftDocs/reliability-docs` 存在，`LICENSE` 是 CC BY 4.0。
+- 2026-10-22 定期檢查：頁面中繼資料指向私有的 `MicrosoftDocs/reliability-docs-pr`，對應的公開 repo 回 404。`azure-docs` 裡也沒有這一頁。
+- 同一天：b1-017 的依據原文還在這一頁、還在標記的章節裡。
+
+**為什麼套用 entra-docs 那條判斷**：那條的第 3 點是本專案的既有做法——本專案公開的只有網址、章節錨點、章節標題與原文雜湊，原文只留本機，沒有散布受授權限制的內容。
+
+**跟 entra-docs 不一樣的地方**（寫明，免得讀的人以為兩件一樣）：
+- entra-docs 是兩份授權文件說法不一致，而兩種讀法都允許本專案的用法。
+- 這一頁是上線時查得到 CC BY 4.0，之後公開 repo 被撤掉，**現在查不到任何授權文件**。所以這條判斷靠的是兩件事：上線時的盤點紀錄，以及本專案公開的範圍。
+
+**先試過的做法**：照 Dispatch 2026-10-22 的順序，先找授權查得到、而且**真的支撐題目內容**的頁面。
+- 同一天 az900-b1-001（同一頁、同一節）找到了：`azure/architecture/aws-professional/regions-zones`，architecture-center，CC BY 4.0，已換過去。
+- b1-017 的正解是「單一資料中心本身無法提供這種程度的保護」，在授權查得到的頁面裡找不到直接支撐的原文。`storage-redundancy` 講的是儲存體複本只放在單一資料中心時的風險，不是「為什麼要組成可用性區域」，拿它當依據是「主題相近就換上去」，不採用。
+
+**程式**：`verify_basis.py` 的 `JUDGED_LICENSE` 只在「網址」和「查不到的原因（沒有公開版）」都對得上時放行，而且輸出會另外列出「授權查不到、依既有判斷放行」的題號——「查得到」和「判斷過可以用」不是同一件事。原因變了（例如頁面又搬家、或這一頁原始檔 404）照樣不通過；原文不在了也照樣不通過。離線測試 2 項守著，突變「不看原因就放行」會紅。
+
+**複查方式**：每次 `--recheck` 都會印出這一題。如果 `reliability-docs` 公開版恢復、或 learn.microsoft.com 有了授權查得到的頁面能直接支撐這一題，就換掉依據、刪掉這一段和程式裡的那一筆。
+
 ### 定期檢查：依據會失效
 
 ```
